@@ -7,4 +7,4 @@ nessun build step. Si apre nel browser e si gioca.
 | Gioco | Cartella | Stato |
 |---|---|---|
 | QIX (Taito, 1981) | `qix/` | giocabile, in sviluppo sul ramo `qix` |
-| Gorillas (Microsoft, QBasic, 1991) | `gorilla/` | giocabile, senza musica, sul ramo `Gorilla` |
+| Gorillas (Microsoft, QBasic, 1991) | `gorilla/` | giocabile, con le musichette PLAY originali rifatte in Web Audio, sul ramo `Gorilla` |

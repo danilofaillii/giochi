@@ -16,9 +16,11 @@
 html,body{height:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:'VT323','Courier New',monospace;font-size:22px;line-height:1.25}
 .wrap{max-width:720px;margin:0 auto;padding-block:16px 40px;padding-inline:16px;display:flex;flex-direction:column;gap:16px}
-header{display:flex;justify-content:space-between;align-items:baseline;gap:8px 20px;flex-wrap:wrap}
+header{display:flex;justify-content:space-between;align-items:center;gap:6px 20px;flex-wrap:wrap}
 h1{margin:0;font-size:36px;font-weight:400;color:var(--hi);letter-spacing:.06em}
-header p{margin:0}
+header p{margin:0;flex:1 1 100%;order:3}
+.small{font-size:18px;padding:2px 12px;box-shadow:3px 3px 0 var(--box)}
+.small[aria-pressed="false"]{background:var(--box);color:var(--ink)}
 .screen{width:100%;max-width:100%;aspect-ratio:640/350;background:var(--sky);border:2px solid var(--box)}
 canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
 .panel{border:4px double var(--ink);padding:12px 16px 16px;display:flex;flex-direction:column;gap:12px}
@@ -44,7 +46,8 @@ footer p{margin:0}
 <main class="wrap">
   <header>
     <h1>GORILLAS</h1>
-    <p>Rifatto da GORILLA.BAS, senza PLAY e senza beep.</p>
+    <p>Rifatto da GORILLA.BAS, PLAY compreso.</p>
+    <button type="button" id="mute" class="small" aria-pressed="true">Audio: on</button>
   </header>
 
   <div class="screen"><canvas id="c" width="640" height="350" aria-label="Campo di gioco"></canvas></div>
@@ -60,7 +63,7 @@ footer p{margin:0}
       <label><span>Gravità (m/s²)</span><input id="gravity" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" value="9.8"></label>
       <button type="submit" id="play">Gioca</button>
     </div>
-    <p class="hint">Terra 9.8, Luna 1.6, Giove 24.8. Il gorilla sulla sinistra è il giocatore 1.</p>
+    <p class="hint">Terra 9.8, Luna 1.6, Giove 24.8. Il gorilla sulla sinistra è il giocatore 1. La musichetta parte al primo Gioca: i browser non suonano nulla finché non tocchi qualcosa.</p>
   </form>
 
   <form id="turn" class="panel" autocomplete="off" hidden>
@@ -84,6 +87,7 @@ footer p{margin:0}
 
   <footer>
     <p>Traiettoria, vento e gravità seguono le stesse formule del .BAS del 1991: x = x0 + vx·t + ½·(vento/5)·t², y = y0 − vy·t + ½·g·t². Il sole si stupisce ancora.</p>
+    <p>Le tre stringhe PLAY originali (intro, esplosione, danza) passano da un piccolo interprete PLAY in Web Audio, onda quadra come lo speaker del PC. Trasposte due ottave in su: l'ottava 0 di QBasic sulle casse di un telefono non esiste.</p>
   </footer>
 </main>
 
@@ -277,6 +281,9 @@ footer p{margin:0}
       ctx.stroke();
     }
     if (G.state === 'setup') {
+      // banda scura dietro il titolo: i palazzi alti arrivano fin quassù
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(40, 108, W - 80, 84);
       ctx.fillStyle = C.white; ctx.textAlign = 'center';
       ctx.font = '26px VT323, "Courier New", monospace';
       ctx.fillText('Q B a s i c   G O R I L L A S', W / 2, 120);
@@ -302,6 +309,105 @@ footer p{margin:0}
     if (G.banana) drawBanana(G.banana.x, G.banana.y, Math.floor(G.banana.n / 3) % 4);
     drawExplosion();
     drawHud();
+  }
+
+  /* ---------- Suono: il PLAY di QBasic in Web Audio ---------- */
+  // Le tre stringhe sono quelle di GORILLA.BAS, lettera per lettera.
+  const TUNE = {
+    intro: 'MBT160O1L8CDEDCDL4ECC',
+    explode: 'MBO0L32EFGEFDC',
+    dance: 'MBO0L16EFGEFDC'
+  };
+  const OCTAVE_SHIFT = 2;   // lo speaker del PC ronzava a 40 Hz; le casse di oggi no
+  const SND = { ctx: null, muted: false, until: 0 };
+  try { SND.muted = localStorage.getItem('gorillas.muted') === '1'; } catch (e) { /* storage negato */ }
+
+  function audioCtx() {
+    if (!SND.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      SND.ctx = new AC();
+    }
+    if (SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {});
+    return SND.ctx;
+  }
+
+  // Interprete della sintassi PLAY di GW-BASIC/QBasic: note A-G con # + -, N, O, < >, L, T, P, punti, MN/ML/MS.
+  // MB/MF (musica in background o in primo piano) non cambiano nulla qui: è sempre in background.
+  // Ottave 0-6, l'ottava 3 parte dal Do centrale. Restituisce note {f (Hz, 0 = pausa), dur, gap} in secondi.
+  const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  function parsePlay(str) {
+    const s = str.toUpperCase().replace(/\s+/g, '');
+    const out = [];
+    let i = 0, tempo = 120, oct = 4, len = 4, mode = 7 / 8;
+    const num = () => {
+      let n = '';
+      while (i < s.length && s[i] >= '0' && s[i] <= '9') n += s[i++];
+      return n === '' ? null : parseInt(n, 10);
+    };
+    const dots = () => { let d = 0; while (s[i] === '.') { d++; i++; } return d; };
+    const push = (semi, l, d) => {
+      const base = (4 / Math.max(1, l)) * 60 / tempo;
+      let total = base, add = base;
+      for (let k = 0; k < d; k++) { add /= 2; total += add; }
+      const rest = semi === null;
+      out.push({ f: rest ? 0 : 440 * Math.pow(2, (semi - 45) / 12), dur: rest ? 0 : total * mode, gap: total });
+    };
+    while (i < s.length) {
+      const c = s[i++];
+      if (c in SEMI) {
+        let semi = oct * 12 + SEMI[c];
+        if (s[i] === '#' || s[i] === '+') { semi++; i++; } else if (s[i] === '-') { semi--; i++; }
+        const l = num();
+        push(semi, l || len, dots());
+      } else if (c === 'N') {
+        const n = num() || 0;
+        push(n === 0 ? null : n - 1, len, dots());
+      } else if (c === 'P') {
+        const l = num();
+        push(null, l || len, dots());
+      } else if (c === 'O') { const n = num(); if (n !== null) oct = Math.min(6, Math.max(0, n)); }
+      else if (c === '>') oct = Math.min(6, oct + 1);
+      else if (c === '<') oct = Math.max(0, oct - 1);
+      else if (c === 'L') { const n = num(); if (n) len = n; }
+      else if (c === 'T') { const n = num(); if (n) tempo = n; }
+      else if (c === 'M') {
+        const m = s[i++];
+        if (m === 'N') mode = 7 / 8; else if (m === 'L') mode = 1; else if (m === 'S') mode = 3 / 4;
+      }
+      // qualsiasi altra lettera (X, virgole, ecc.) viene ignorata come faceva il BASIC con quello che non capiva
+    }
+    return out;
+  }
+
+  function play(str) {
+    if (SND.muted) return;
+    const ac = audioCtx();
+    if (!ac) return;
+    // MB nel BASIC accodava le note allo speaker: chi arriva dopo aspetta il suo turno, niente sovrapposizioni.
+    let t = Math.max(ac.currentTime + 0.03, SND.until || 0);
+    for (const n of parsePlay(str)) {
+      if (n.f > 0 && n.dur > 0) {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = 'square';
+        o.frequency.value = n.f * Math.pow(2, OCTAVE_SHIFT);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.setValueAtTime(0.06, t + Math.max(0.005, n.dur - 0.008));
+        g.gain.linearRampToValueAtTime(0.0001, t + n.dur);
+        o.connect(g); g.connect(ac.destination);
+        o.start(t); o.stop(t + n.dur + 0.01);
+      }
+      t += n.gap;
+    }
+    SND.until = t;
+  }
+
+  function setMuted(m) {
+    SND.muted = m;
+    const b = $('mute');
+    b.setAttribute('aria-pressed', m ? 'false' : 'true');
+    b.textContent = 'Audio: ' + (m ? 'off' : 'on');
+    try { localStorage.setItem('gorillas.muted', m ? '1' : '0'); } catch (e) { /* pazienza */ }
   }
 
   /* ---------- Gioco ---------- */
@@ -333,6 +439,7 @@ footer p{margin:0}
   function startGame() {
     G.scores = [0, 0];
     G.turn = 0;
+    play(TUNE.intro);
     newRound();
   }
 
@@ -386,6 +493,7 @@ footer p{margin:0}
     G.banana = null;
     G.state = 'explode';
     G.explosion = { x, y, R, r: 0, winner, start: now(), cut: false };
+    play(TUNE.explode);
   }
 
   function updateExplosion() {
@@ -409,7 +517,7 @@ footer p{margin:0}
       else {
         G.scores[e.winner]++;
         G.state = 'dance';
-        G.dance = { winner: e.winner, start: now() };
+        G.dance = { winner: e.winner, start: now(), cycle: -1 };
       }
     }
   }
@@ -417,7 +525,10 @@ footer p{margin:0}
   function updateDance() {
     const d = G.dance;
     const el = now() - d.start;
-    G.arms[d.winner] = Math.floor(el / 250) % 2 ? 3 : 0;
+    // Come nel .BAS: quattro volte braccia su, e a ogni alzata la stessa fanfara.
+    const cycle = Math.floor(el / 500);
+    if (cycle !== d.cycle && cycle < 4) { d.cycle = cycle; play(TUNE.dance); }
+    G.arms[d.winner] = el % 500 < 250 ? 3 : 0;
     if (el > 2300) {
       G.dance = null;
       G.arms = [0, 0];
@@ -430,12 +541,11 @@ footer p{margin:0}
         show('over');
         $('again').focus();
       } else {
-        G.turn = l1(d.winner);
+        G.turn = 1 - d.winner;   // ricomincia chi ha preso la banana
         newRound();
       }
     }
   }
-  function l1(w) { return 1 - w; }
 
   let lastTs = 0, acc = 0;
   const STEP = 1 / 90;
@@ -477,6 +587,11 @@ footer p{margin:0}
     throwBanana(a, v);
   });
 
+  $('mute').addEventListener('click', () => {
+    setMuted(!SND.muted);
+    if (!SND.muted) play('T160O3L16CE');   // conferma breve, sennò non sai se ha funzionato
+  });
+
   $('again').addEventListener('click', () => {
     G.state = 'setup';
     G.scores = [0, 0];
@@ -496,6 +611,7 @@ footer p{margin:0}
       $('ptw').value = G.ptw; $('gravity').value = G.gravity;
       if (data.inPlay) { startGame(); G.scores = data.scores.slice(); }
     }
+    setMuted(SND.muted);
     if (document.fonts && document.fonts.load) document.fonts.load('20px VT323').catch(() => {});
     requestAnimationFrame(loop);
   }
