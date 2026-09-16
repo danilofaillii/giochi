@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QIX Arcade</title>
+<meta name="description" content="Remake di QIX in HTML e JavaScript puro: conquista il 75% dello schermo evitando QIX, Sparx e Fuse.">
+<meta name="theme-color" content="#07080f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2307080f'/%3E%3Crect x='3' y='3' width='26' height='26' fill='none' stroke='%23c9d2ea' stroke-width='2'/%3E%3Crect x='4' y='17' width='13' height='11' fill='%231d4a9e'/%3E%3Cpath d='M16 6l3 3-3 3-3-3z' fill='%23ffe45c'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap">
+<style>
+  [hidden]{display:none!important}
+  img{max-width:100%}
+  :root{
+    --bg:#07080f; --panel:#0d1020; --line:#1c2140;
+    --ink:#e6eaf7; --dim:#7f88a8;
+    --accent:#ffe45c; --blue:#7fb3ff; --red:#ff8a7a; --orange:#ff6a2b;
+    --display:'Silkscreen', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  html,body{height:100%}
+  body{
+    margin:0; box-sizing:border-box; min-height:100%;
+    background:var(--bg); color:var(--ink);
+    font-family:var(--mono); font-size:13px; line-height:1.4;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    padding-inline:16px; padding-block:10px;
+  }
+  *{box-sizing:border-box}
+  .hud{
+    width:100%; max-width:720px;
+    display:flex; flex-wrap:wrap; gap:8px 20px; align-items:flex-end; justify-content:space-between;
+    font-family:var(--display);
+  }
+  .stat{display:flex; flex-direction:column; gap:2px; min-width:0}
+  .stat .lab{font-size:9px; letter-spacing:.12em; color:var(--dim); text-transform:uppercase}
+  .stat .val{font-size:18px; color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .stat .val.acc{color:var(--accent)}
+  .lives{color:var(--accent); letter-spacing:.2em}
+  .claim{flex:1 1 180px}
+  .bar{position:relative; height:10px; background:var(--panel); border:1px solid var(--line); margin-top:4px}
+  .bar .fill{position:absolute; inset:0; width:0%; background:linear-gradient(90deg,#1d4a9e,#7fb3ff)}
+  .bar .fill.slow{background:linear-gradient(90deg,#a2352b,#ff8a7a)}
+  .bar .mark{position:absolute; top:-3px; bottom:-3px; left:75%; width:2px; background:var(--accent)}
+  .bar .mark::after{content:'75%'; position:absolute; top:-13px; left:-10px; font-size:8px; color:var(--accent); letter-spacing:.05em}
+
+  .stage{position:relative; width:100%; max-width:720px; display:flex; justify-content:center}
+  canvas{
+    display:block; width:100%; max-width:100%;
+    background:var(--bg); border:1px solid var(--line);
+    box-shadow:0 0 0 1px #000, 0 0 40px rgba(127,179,255,.08) inset;
+    touch-action:none;
+  }
+  .overlay{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    text-align:center; padding:20px; background:rgba(7,8,15,.72); cursor:pointer;
+  }
+  .overlay h1{font-family:var(--display); font-size:clamp(28px,8vw,56px); margin:0; color:var(--accent); letter-spacing:.06em; text-wrap:balance; text-shadow:0 0 18px rgba(255,228,92,.35)}
+  .overlay h2{font-family:var(--display); font-size:clamp(16px,4vw,26px); margin:0; color:var(--ink); text-wrap:balance}
+  .overlay p{margin:0; max-width:46ch; color:var(--ink); font-size:13px}
+  .overlay .hint{font-family:var(--display); font-size:11px; color:var(--dim); letter-spacing:.1em; animation:blink 1.2s steps(2,start) infinite}
+  .overlay .big{font-family:var(--display); font-size:clamp(14px,3.5vw,22px); color:var(--blue)}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){ .overlay .hint{animation:none} }
+
+  .legend{
+    width:100%; max-width:720px; display:flex; flex-wrap:wrap; gap:6px 18px; justify-content:center;
+    color:var(--dim); font-size:12px;
+  }
+  .legend b{color:var(--ink); font-weight:600}
+  kbd{font-family:var(--display); font-size:10px; padding:2px 6px; border:1px solid var(--line); border-bottom-width:3px; background:var(--panel); color:var(--ink); border-radius:3px}
+
+  .pad{display:none; width:100%; max-width:720px; justify-content:space-between; align-items:center; gap:16px; user-select:none; -webkit-user-select:none}
+  @media (pointer:coarse){ .pad{display:flex} .legend{display:none} }
+  .dpad{display:grid; grid-template-columns:repeat(3,54px); grid-template-rows:repeat(3,54px); gap:4px}
+  .dpad button:nth-child(1){grid-area:1/2} .dpad button:nth-child(2){grid-area:2/1}
+  .dpad button:nth-child(3){grid-area:2/3} .dpad button:nth-child(4){grid-area:3/2}
+  .pad button{
+    font-family:var(--display); font-size:14px; color:var(--ink);
+    background:var(--panel); border:1px solid var(--line); border-bottom-width:4px; border-radius:6px;
+    touch-action:none; -webkit-tap-highlight-color:transparent;
+  }
+  .pad button:active, .pad button.on{background:#1a2040; border-bottom-width:1px; transform:translateY(3px)}
+  .pad button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .acts{display:flex; flex-direction:column; gap:10px}
+  .acts button{width:120px; height:54px; font-size:11px}
+  .acts .fast{color:var(--blue)} .acts .slow{color:var(--red)}
+  .overlay:focus-visible{outline:2px solid var(--accent)}
+  .overlay[hidden]{display:none}
+</style>
+</head>
+<body>
+
+<div class="hud" aria-live="polite">
+  <div class="stat"><span class="lab">Punti</span><span class="val acc" id="score">0</span></div>
+  <div class="stat"><span class="lab">Record</span><span class="val" id="hi">0</span></div>
+  <div class="stat"><span class="lab">Vite</span><span class="val lives" id="lives">◆◆◆</span></div>
+  <div class="stat"><span class="lab">Livello</span><span class="val" id="level">1</span></div>
+  <div class="stat claim">
+    <span class="lab">Territorio <span id="pct">0.0%</span></span>
+    <div class="bar"><div class="fill" id="fill"></div><div class="mark"></div></div>
+  </div>
+</div>
+
+<div class="stage">
+  <canvas id="c" width="600" height="380" aria-label="Campo di gioco QIX"></canvas>
+  <div class="overlay" id="overlay" tabindex="0" role="button">
+    <h1 id="ov-title">QIX</h1>
+    <h2 id="ov-sub" hidden></h2>
+    <p id="ov-text">Conquista almeno il 75% dello schermo tracciando linee nell'area vuota. Il QIX non deve toccare la tua linea mentre la disegni. Gli Sparx pattugliano i bordi. Se ti fermi a metà tracciato, il Fuse ti brucia la linea alle spalle.</p>
+    <p id="ov-big" class="big" hidden></p>
+    <p class="hint" id="ov-hint">PREMI INVIO O TOCCA PER GIOCARE</p>
+  </div>
+</div>
+
+<div class="legend">
+  <span><kbd>←↑↓→</kbd> / <kbd>WASD</kbd> muovi</span>
+  <span><kbd>SPAZIO</kbd> <b>traccia veloce</b></span>
+  <span><kbd>SHIFT</kbd> <b>traccia lento</b> (punti ×2)</span>
+  <span><kbd>P</kbd> pausa</span>
+  <span><kbd>INVIO</kbd> avvia</span>
+</div>
+
+<div class="pad">
+  <div class="dpad">
+    <button type="button" data-key="up" aria-label="Su">▲</button>
+    <button type="button" data-key="left" aria-label="Sinistra">◀</button>
+    <button type="button" data-key="right" aria-label="Destra">▶</button>
+    <button type="button" data-key="down" aria-label="Giù">▼</button>
+  </div>
+  <div class="acts">
+    <button type="button" class="fast" data-key="fast">VELOCE</button>
+    <button type="button" class="slow" data-key="slow">LENTO ×2</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- Costanti di gioco ---------- */
+const W = 120, H = 76, CELL = 5, LW = W * CELL, LH = H * CELL;
+const FREE = 0, EDGE = 1, FILLED = 2, TRAIL = 3;
+const INTERIOR = (W - 2) * (H - 2);
+const TARGET = 75;
+const grid = new Uint8Array(W * H);   // stato di ogni cella
+const kind = new Uint8Array(W * H);   // 1 = riempita veloce, 2 = riempita lenta
+const I = (x, y) => y * W + x;
+
+const COL = {
+  bg: '#07080f', edge: '#c9d2ea',
+  fillFast: '#1d4a9e', fillSlow: '#a2352b',
+  trailFast: '#7fb3ff', trailSlow: '#ff8a7a',
+  player: '#ffe45c', sparx: '#ff6a2b', fuse: '#ffb347'
+};
+
+/* ---------- Stato ---------- */
+const S = { mode: 'title', score: 0, hi: 0, lives: 3, level: 1, filled: 0, timer: 0, bonus: 0, split: false, flash: 0, lastKind: 1, prevMode: 'playing' };
+const P = { x: 0, y: 0, drawing: false, trail: [], trailSlow: false, fuse: 0, fuseAcc: 0, idle: 0, acc: 0, inv: 0 };
+let sparx = [], qixes = [];
+const keys = { up: false, down: false, left: false, right: false, fast: false, slow: false };
+const dirStack = [];
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+
+try { S.hi = parseInt(localStorage.getItem('qix-hi') || '0', 10) || 0; } catch (e) {}
+function saveHi() {
+  if (S.score > S.hi) { S.hi = S.score; try { localStorage.setItem('qix-hi', String(S.hi)); } catch (e) {} }
+}
+
+/* ---------- Canvas ---------- */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const gcan = document.createElement('canvas'); gcan.width = LW; gcan.height = LH;
+const gctx = gcan.getContext('2d');
+let scale = 1;
+
+function resize() {
+  const stage = canvas.parentElement;
+  const hud = document.querySelector('.hud'), legend = document.querySelector('.legend'), pad = document.querySelector('.pad');
+  const others = hud.offsetHeight + legend.offsetHeight + pad.offsetHeight + 60;
+  const availH = Math.max(160, window.innerHeight - others);
+  const cssW = Math.max(240, Math.min(stage.clientWidth, availH * LW / LH));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = (cssW * LH / LW) + 'px';
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssW * LH / LW * dpr);
+  scale = canvas.width / LW;
+}
+window.addEventListener('resize', resize);
+
+/* ---------- Griglia ---------- */
+function paintCell(x, y) {
+  const i = I(x, y), t = grid[i];
+  gctx.clearRect(x * CELL, y * CELL, CELL, CELL);
+  if (t === FREE) return;
+  gctx.fillStyle = t === EDGE ? COL.edge
+    : t === FILLED ? (kind[i] === 2 ? COL.fillSlow : COL.fillFast)
+    : (P.trailSlow ? COL.trailSlow : COL.trailFast);
+  gctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+}
+function repaintGrid() {
+  gctx.clearRect(0, 0, LW, LH);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) paintCell(x, y);
+}
+function cellAt(px, py) {
+  const x = Math.floor(px / CELL), y = Math.floor(py / CELL);
+  if (x < 0 || y < 0 || x >= W || y >= H) return EDGE;
+  return grid[I(x, y)];
+}
+function nearestFree(x, y) {
+  for (let r = 0; r < Math.max(W, H); r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (grid[I(nx, ny)] === FREE) return I(nx, ny);
+    }
+  }
+  return I(W >> 1, H >> 1);
+}
+const visited = new Uint8Array(W * H), queue = new Int32Array(W * H);
+function flood(start) {
+  visited.fill(0);
+  let h = 0, t = 0;
+  queue[t++] = start; visited[start] = 1;
+  while (h < t) {
+    const i = queue[h++], x = i % W;
+    let j;
+    if (x > 0) { j = i - 1; if (!visited[j] && grid[j] === FREE) { visited[j] = 1; queue[t++] = j; } }
+    if (x < W - 1) { j = i + 1; if (!visited[j] && grid[j] === FREE) { visited[j] = 1; queue[t++] = j; } }
+    if (i >= W) { j = i - W; if (!visited[j] && grid[j] === FREE) { visited[j] = 1; queue[t++] = j; } }
+    if (i < W * (H - 1)) { j = i + W; if (!visited[j] && grid[j] === FREE) { visited[j] = 1; queue[t++] = j; } }
+  }
+}
+function hasFreeNeighbour(x, y) {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue;
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+    if (grid[I(nx, ny)] === FREE) return true;
+  }
+  return false;
+}
+function countFilled() {
+  let n = 0;
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (grid[I(x, y)] === FILLED) n++;
+  return n;
+}
+const pct = () => S.filled / INTERIOR * 100;
+
+/* ---------- Setup livello ---------- */
+function makeQix(cx, cy) {
+  const a = Math.random() * Math.PI * 2;
+  return { ax: cx - 14, ay: cy, bx: cx + 14, by: cy, aa: a, ba: a + Math.PI,
+    speed: 85 + S.level * 14, segs: [], hue: Math.random() * 360, segAcc: 0 };
+}
+function makeSparx(x, y, px, py) { return { x, y, px, py, acc: 0 }; }
+
+function setupLevel() {
+  grid.fill(FREE); kind.fill(0);
+  for (let x = 0; x < W; x++) { grid[I(x, 0)] = EDGE; grid[I(x, H - 1)] = EDGE; }
+  for (let y = 0; y < H; y++) { grid[I(0, y)] = EDGE; grid[I(W - 1, y)] = EDGE; }
+  S.filled = 0; S.split = false; S.bonus = 0;
+  P.x = W >> 1; P.y = H - 1; P.drawing = false; P.trail = []; P.fuse = 0; P.idle = 0; P.acc = 0;
+  qixes = S.level >= 3
+    ? [makeQix(LW * 0.35, LH * 0.5), makeQix(LW * 0.65, LH * 0.5)]
+    : [makeQix(LW * 0.5, LH * 0.5)];
+  const ns = Math.min(2 + (S.level - 1), 6);
+  sparx = [];
+  for (let i = 0; i < ns; i++) {
+    const dir = i % 2 ? 1 : -1;
+    const sx = (W >> 1) + dir * (2 + (i >> 1) * 6);
+    sparx.push(makeSparx(sx, 0, sx - dir, 0));
+  }
+  repaintGrid();
+}
+
+/* ---------- Giocatore ---------- */
+function adjTrail(nx, ny) {
+  const n = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dx, dy] of n) {
+    const x = nx + dx, y = ny + dy;
+    if (x === P.x && y === P.y) continue;
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    if (grid[I(x, y)] === TRAIL) return true;
+  }
+  return false;
+}
+function placeTrail(nx, ny) {
+  P.x = nx; P.y = ny;
+  grid[I(nx, ny)] = TRAIL; P.trail.push(I(nx, ny)); paintCell(nx, ny);
+}
+function tryMove(dx, dy) {
+  const nx = P.x + dx, ny = P.y + dy;
+  if (nx < 0 || ny < 0 || nx >= W || ny >= H) return false;
+  const t = grid[I(nx, ny)];
+  const drawHeld = keys.fast || keys.slow;
+  if (P.drawing) {
+    if (t === FREE) {
+      if (!drawHeld || adjTrail(nx, ny)) return false;
+      if (!keys.slow) P.trailSlow = false;
+      placeTrail(nx, ny); return true;
+    }
+    if (t === EDGE) { P.x = nx; P.y = ny; closeArea(); return true; }
+    return false;
+  }
+  if (t === EDGE) { P.x = nx; P.y = ny; return true; }
+  if (t === FREE && drawHeld) {
+    P.drawing = true; P.trailSlow = keys.slow; P.trail = [I(P.x, P.y)];
+    P.fuse = 0; P.fuseAcc = 0; P.idle = 0;
+    placeTrail(nx, ny); return true;
+  }
+  return false;
+}
+function updatePlayer(dt) {
+  P.inv = Math.max(0, P.inv - dt);
+  const d = dirStack.length ? DIRS[dirStack[dirStack.length - 1]] : null;
+  const speed = (P.drawing && keys.slow) ? 16 : 30;
+  const step = 1 / speed;
+  P.acc += dt;
+  let moved = false;
+  while (P.acc >= step) {
+    P.acc -= step;
+    if (d && S.mode === 'playing' && tryMove(d[0], d[1])) moved = true;
+  }
+  if (!d) P.acc = Math.min(P.acc, step);
+  if (P.drawing && S.mode === 'playing') {
+    if (moved) { P.idle = 0; P.fuseAcc = 0; }
+    else {
+      P.idle += dt;
+      if (P.idle > 0.3) {
+        P.fuseAcc += dt;
+        while (P.fuseAcc >= 0.045) {
+          P.fuseAcc -= 0.045; P.fuse++;
+          if (P.fuse >= P.trail.length - 1) { die(); break; }
+        }
+      }
+    }
+  }
+}
+
+/* ---------- Chiusura area ---------- */
+function closeArea() {
+  const slow = P.trailSlow, k = slow ? 2 : 1;
+  for (let i = 1; i < P.trail.length; i++) grid[P.trail[i]] = EDGE;
+  const q0 = qixes[0];
+  flood(nearestFree(Math.floor(q0.ax / CELL), Math.floor(q0.ay / CELL)));
+  let split = false;
+  if (qixes.length > 1) {
+    const q1 = qixes[1];
+    split = !visited[nearestFree(Math.floor(q1.ax / CELL), Math.floor(q1.ay / CELL))];
+  }
+  let gained = 0;
+  for (let i = 0; i < W * H; i++) if (grid[i] === FREE && !visited[i]) { grid[i] = FILLED; kind[i] = k; gained++; }
+  const me = I(P.x, P.y);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = I(x, y);
+    if (grid[i] === EDGE && i !== me && !hasFreeNeighbour(x, y)) { grid[i] = FILLED; kind[i] = k; }
+  }
+  rescuePlayer(k);
+  for (const s of sparx) if (!walkable(I(s.x, s.y)) || !hasEdgeNeighbour(s.x, s.y)) relocateSparx(s);
+  S.filled = countFilled(); S.lastKind = k;
+  S.score += gained * (slow ? 20 : 10);
+  P.trail = []; P.drawing = false; P.fuse = 0; P.idle = 0;
+  repaintGrid();
+  if (split) levelClear(true);
+  else if (pct() >= TARGET) levelClear(false);
+  saveHi();
+}
+function walkable(i) { return grid[i] === EDGE && hasFreeNeighbour(i % W, (i / W) | 0); }
+function hasEdgeNeighbour(x, y) {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+    if (grid[I(nx, ny)] === EDGE) return true;
+  }
+  return false;
+}
+// Se il cursore e' rimasto su una cella isolata (linea con area piena da entrambi i lati),
+// lo riporta sulla cella percorribile piu' vicina, cercando attraverso l'area piena.
+function rescuePlayer(k) {
+  const me = I(P.x, P.y);
+  if (hasEdgeNeighbour(P.x, P.y) && hasFreeNeighbour(P.x, P.y)) return;
+  visited.fill(0);
+  let h = 0, t = 0;
+  queue[t++] = me; visited[me] = 1;
+  while (h < t) {
+    const i = queue[h++], x = i % W, y = (i / W) | 0;
+    if (i !== me && walkable(i)) {
+      grid[me] = FILLED; kind[me] = k;
+      P.x = x; P.y = y;
+      return;
+    }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = I(nx, ny);
+      if (!visited[j] && grid[j] !== FREE) { visited[j] = 1; queue[t++] = j; }
+    }
+  }
+}
+function relocateSparx(s) {
+  const cand = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+    if (grid[I(x, y)] === EDGE && Math.abs(x - P.x) + Math.abs(y - P.y) > 25) cand.push([x, y]);
+  if (!cand.length) return;
+  const [x, y] = cand[(Math.random() * cand.length) | 0];
+  s.x = x; s.y = y; s.px = x; s.py = y;
+}
+
+/* ---------- Sparx ---------- */
+function updateSparx(dt) {
+  const interval = 1 / (16 + S.level * 2);
+  for (const s of sparx) {
+    s.acc += dt;
+    while (s.acc >= interval) { s.acc -= interval; stepSparx(s); }
+  }
+}
+function stepSparx(s) {
+  const opts = [];
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const x = s.x + dx, y = s.y + dy;
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    if (grid[I(x, y)] === EDGE) opts.push([x, y]);
+  }
+  if (!opts.length) return;
+  let pool = opts.filter(([x, y]) => !(x === s.px && y === s.py));
+  if (!pool.length) pool = opts;
+  let pick;
+  if (Math.random() < 0.55) {
+    pick = pool.reduce((best, c) => {
+      const d = Math.abs(c[0] - P.x) + Math.abs(c[1] - P.y);
+      return d < best.d ? { c, d } : best;
+    }, { c: pool[0], d: Infinity }).c;
+  } else pick = pool[(Math.random() * pool.length) | 0];
+  s.px = s.x; s.py = s.y; s.x = pick[0]; s.y = pick[1];
+}
+
+/* ---------- QIX ---------- */
+function lerpAngle(a, b, k) {
+  let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  return a + d * k;
+}
+function moveEnd(q, which, dt) {
+  const kx = which ? 'bx' : 'ax', ky = which ? 'by' : 'ay', ka = which ? 'ba' : 'aa';
+  const x = q[kx], y = q[ky];
+  let ang = q[ka];
+  let vx = Math.cos(ang) * q.speed * dt, vy = Math.sin(ang) * q.speed * dt;
+  let nx = x + vx, ny = y + vy, bounced = false;
+  const cx = cellAt(nx, y);
+  if (cx !== FREE) { if (cx === TRAIL) return true; vx = -vx; nx = x; bounced = true; }
+  const cy = cellAt(nx, ny);
+  if (cy !== FREE) { if (cy === TRAIL) return true; vy = -vy; ny = y; bounced = true; }
+  if (bounced) ang = Math.atan2(vy, vx) + (Math.random() - 0.5) * 0.6;
+  if (cellAt(nx, ny) !== FREE) {
+    const c = nearestFree(Math.floor(nx / CELL), Math.floor(ny / CELL));
+    nx = (c % W + 0.5) * CELL; ny = (((c / W) | 0) + 0.5) * CELL;
+  }
+  q[kx] = nx; q[ky] = ny; q[ka] = ang;
+  return false;
+}
+function updateQix(q, dt, lethal) {
+  q.aa += (Math.random() - 0.5) * 0.3; q.ba += (Math.random() - 0.5) * 0.3;
+  let dx = q.bx - q.ax, dy = q.by - q.ay, d = Math.hypot(dx, dy) || 1;
+  const t = Math.atan2(dy, dx);
+  if (d > 70) { q.aa = lerpAngle(q.aa, t, 0.25); q.ba = lerpAngle(q.ba, t + Math.PI, 0.25); }
+  else if (d < 24) { q.aa = lerpAngle(q.aa, t + Math.PI, 0.25); q.ba = lerpAngle(q.ba, t, 0.25); }
+  const hitA = moveEnd(q, 0, dt), hitB = moveEnd(q, 1, dt);
+  q.hue = (q.hue + dt * 140) % 360;
+  q.segAcc += dt;
+  if (q.segAcc > 0.03) {
+    q.segAcc = 0;
+    q.segs.push({ ax: q.ax, ay: q.ay, bx: q.bx, by: q.by, hue: q.hue });
+    if (q.segs.length > 16) q.segs.shift();
+  }
+  if (!lethal) return false;
+  if (hitA || hitB) return true;
+  dx = q.bx - q.ax; dy = q.by - q.ay;
+  for (let i = 0; i <= 24; i++) {
+    const s = i / 24;
+    if (cellAt(q.ax + dx * s, q.ay + dy * s) === TRAIL) return true;
+  }
+  return false;
+}
+
+/* ---------- Flusso di gioco ---------- */
+function startGame() {
+  S.score = 0; S.lives = 3; S.level = 1;
+  setupLevel(); S.mode = 'playing'; P.inv = 1.5;
+}
+function die() {
+  if (S.mode !== 'playing') return;
+  S.mode = 'dying'; S.timer = 1.1; S.flash = 1;
+}
+function respawn() {
+  for (let i = 1; i < P.trail.length; i++) grid[P.trail[i]] = FREE;
+  if (P.trail.length) { const s = P.trail[0]; P.x = s % W; P.y = (s / W) | 0; }
+  P.trail = []; P.drawing = false; P.fuse = 0; P.idle = 0;
+  for (const s of sparx) if (Math.abs(s.x - P.x) + Math.abs(s.y - P.y) < 14) relocateSparx(s);
+  repaintGrid();
+  S.lives--;
+  if (S.lives < 0) { S.lives = 0; S.mode = 'gameover'; saveHi(); }
+  else { S.mode = 'playing'; P.inv = 2; }
+}
+function levelClear(split) {
+  S.mode = 'clear'; S.timer = 3.2; S.split = split;
+  S.bonus = split ? 20000 : Math.max(0, Math.round((pct() - TARGET) * 1000));
+  S.score += S.bonus;
+}
+function nextLevel() { S.level++; setupLevel(); S.mode = 'playing'; P.inv = 1.5; }
+function action() {
+  if (S.mode === 'title' || S.mode === 'gameover') startGame();
+  else if (S.mode === 'clear') nextLevel();
+  else if (S.mode === 'paused') S.mode = S.prevMode;
+}
+function togglePause() {
+  if (S.mode === 'playing') { S.prevMode = 'playing'; S.mode = 'paused'; }
+  else if (S.mode === 'paused') S.mode = S.prevMode;
+}
+
+function update(dt) {
+  if (S.flash > 0) S.flash = Math.max(0, S.flash - dt * 2.5);
+  if (S.mode === 'playing') {
+    updatePlayer(dt);
+    if (S.mode !== 'playing') return;
+    updateSparx(dt);
+    if (!P.drawing && P.inv <= 0 && sparx.some(s => s.x === P.x && s.y === P.y)) { die(); return; }
+    for (const q of qixes) if (updateQix(q, dt, true)) { die(); return; }
+  } else if (S.mode === 'dying') {
+    S.timer -= dt; if (S.timer <= 0) respawn();
+  } else if (S.mode === 'clear') {
+    for (const q of qixes) updateQix(q, dt, false);
+    S.timer -= dt; if (S.timer <= 0) nextLevel();
+  } else if (S.mode === 'title' || S.mode === 'gameover') {
+    for (const q of qixes) updateQix(q, dt, false);
+  }
+}
+
+/* ---------- Render ---------- */
+function drawQix(q) {
+  ctx.lineWidth = 2; ctx.lineCap = 'round';
+  q.segs.forEach((s, i) => {
+    const a = 0.25 + 0.75 * (i + 1) / q.segs.length;
+    ctx.strokeStyle = `hsla(${s.hue | 0},95%,62%,${a})`;
+    ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke();
+  });
+}
+function drawDiamond(cx, cy, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy); ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy); ctx.closePath(); ctx.fill();
+}
+function render(now) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  for (const q of qixes) drawQix(q);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(gcan, 0, 0, LW, LH);
+
+  if (P.drawing && P.fuse > 0 && P.trail[P.fuse] !== undefined) {
+    const c = P.trail[P.fuse], fx = (c % W + 0.5) * CELL, fy = (((c / W) | 0) + 0.5) * CELL;
+    const r = 3 + Math.sin(now / 40) * 1.5;
+    ctx.fillStyle = COL.fuse; ctx.beginPath(); ctx.arc(fx, fy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(fx, fy, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+  const spin = now / 90;
+  for (const s of sparx) {
+    const cx = (s.x + 0.5) * CELL, cy = (s.y + 0.5) * CELL;
+    ctx.strokeStyle = COL.sparx; ctx.lineWidth = 1.6;
+    for (let k = 0; k < 4; k++) {
+      const a = spin + k * Math.PI / 2;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * 5, cy + Math.sin(a) * 5); ctx.stroke();
+    }
+    ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  }
+  if (S.mode !== 'title' && S.mode !== 'gameover') {
+    const blink = P.inv > 0 && Math.floor(now / 90) % 2 === 0;
+    if (!blink) {
+      const cx = (P.x + 0.5) * CELL, cy = (P.y + 0.5) * CELL;
+      drawDiamond(cx, cy, 5, COL.player);
+      drawDiamond(cx, cy, 2, COL.bg);
+    }
+  }
+  if (S.flash > 0) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = `rgba(255,120,90,${S.flash * 0.45})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+/* ---------- HUD & overlay ---------- */
+const el = id => document.getElementById(id);
+const hud = { score: el('score'), hi: el('hi'), lives: el('lives'), level: el('level'), pct: el('pct'), fill: el('fill') };
+const ov = { box: el('overlay'), title: el('ov-title'), sub: el('ov-sub'), text: el('ov-text'), big: el('ov-big'), hint: el('ov-hint') };
+let lastHud = '', lastOv = '';
+function setText(node, s) { if (node.textContent !== s) node.textContent = s; }
+function updateHud() {
+  const p = pct();
+  const key = `${S.score}|${S.hi}|${S.lives}|${S.level}|${p.toFixed(1)}|${S.lastKind}`;
+  if (key !== lastHud) {
+    lastHud = key;
+    setText(hud.score, String(S.score)); setText(hud.hi, String(S.hi));
+    setText(hud.lives, '◆'.repeat(S.lives) || '—'); setText(hud.level, String(S.level));
+    setText(hud.pct, p.toFixed(1) + '%');
+    hud.fill.style.width = Math.min(100, p) + '%';
+    hud.fill.classList.toggle('slow', S.lastKind === 2);
+  }
+  if (S.mode === lastOv) return;
+  lastOv = S.mode;
+  const show = (title, sub, text, big, hint) => {
+    ov.box.hidden = false;
+    setText(ov.title, title);
+    ov.sub.hidden = !sub; setText(ov.sub, sub || '');
+    ov.text.hidden = !text; setText(ov.text, text || '');
+    ov.big.hidden = !big; setText(ov.big, big || '');
+    ov.hint.hidden = !hint; setText(ov.hint, hint || '');
+  };
+  switch (S.mode) {
+    case 'title':
+      show('QIX', '', 'Conquista almeno il 75% dello schermo tracciando linee nell\'area vuota. Il QIX non deve toccare la tua linea mentre la disegni. Gli Sparx pattugliano i bordi. Se ti fermi a metà tracciato, il Fuse ti brucia la linea alle spalle.', '', 'PREMI INVIO O TOCCA PER GIOCARE');
+      break;
+    case 'gameover':
+      show('GAME OVER', `Punti ${S.score}`, S.score >= S.hi && S.score > 0 ? 'Nuovo record.' : `Record ${S.hi}`, '', 'INVIO O TOCCA PER RIGIOCARE');
+      break;
+    case 'clear':
+      show(S.split ? 'QIX DIVISO!' : 'LIVELLO ' + S.level, `${pct().toFixed(1)}% conquistato`, '', 'BONUS ' + S.bonus, 'INVIO PER CONTINUARE');
+      break;
+    case 'paused':
+      show('PAUSA', '', '', '', 'INVIO O P PER RIPRENDERE');
+      break;
+    default:
+      ov.box.hidden = true;
+  }
+}
+
+/* ---------- Input ---------- */
+const KEYMAP = {
+  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+  Space: 'fast', KeyZ: 'fast', ShiftLeft: 'slow', ShiftRight: 'slow', KeyX: 'slow'
+};
+function press(k) { if (keys[k]) return; keys[k] = true; if (DIRS[k]) dirStack.push(k); }
+function release(k) { keys[k] = false; const i = dirStack.indexOf(k); if (i >= 0) dirStack.splice(i, 1); }
+document.addEventListener('keydown', e => {
+  const k = KEYMAP[e.code];
+  if (k) { press(k); e.preventDefault(); return; }
+  if (e.code === 'Enter') { action(); e.preventDefault(); }
+  else if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); e.preventDefault(); }
+});
+document.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) release(k); });
+window.addEventListener('blur', () => { for (const k in keys) release(k); if (S.mode === 'playing') togglePause(); });
+ov.box.addEventListener('pointerdown', e => { e.preventDefault(); action(); });
+for (const b of document.querySelectorAll('.pad button')) {
+  const k = b.dataset.key;
+  const on = e => { e.preventDefault(); b.classList.add('on'); press(k); b.setPointerCapture?.(e.pointerId); };
+  const off = () => { b.classList.remove('on'); release(k); };
+  b.addEventListener('pointerdown', on);
+  b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+/* ---------- Loop ---------- */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt); render(now); updateHud();
+  requestAnimationFrame(frame);
+}
+function start(data) {
+  resize();
+  if (data && data.level) {
+    S.score = data.score || 0; S.level = data.level; S.lives = data.lives ?? 3;
+    setupLevel(); S.prevMode = 'playing'; S.mode = 'paused';
+  } else { setupLevel(); S.mode = 'title'; }
+  document.fonts?.ready?.then(resize);
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.snapshot?.(() => ({ score: S.score, level: S.level, lives: S.lives }));
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
