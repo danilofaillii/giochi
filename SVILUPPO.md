@@ -14,6 +14,7 @@ niente framework, niente build. Audio sintetizzato in Web Audio, record salvati 
 | QIX (Taito, 1981) | `qix` | ~750 | timer, Super Sparx, audio sintetizzato |
 | Gorillas (QBasic, 1991) | `Gorilla` | ~630 | musichette PLAY rifatte in Web Audio |
 | Campo minato | `campo-minato` | ~550 | prima versione giocabile |
+| Breakout (Atari, 1976) | `breakout` | ~520 | regole Atari, 6 schemi, power-up, mouse/touch |
 
 Nessuno dei tre è ancora unito su `main`: il README di `main` elenca solo QIX.
 
@@ -26,7 +27,6 @@ Ogni riga: cosa lo rende interessante, quanto costa, cosa ha di nuovo rispetto a
 | Gioco | Perché | Novità tecnica |
 |---|---|---|
 | **Snake** (Nokia, 1997) | tutti lo conoscono, si gioca anche da telefono con swipe | griglia + input touch |
-| **Breakout / Arkanoid** (Atari, 1976) | fisica pallina già vista in Gorillas, si riusa | collisioni con angolo, power-up |
 | **Tetris** (1984) | il classico dei classici, mancava | rotazione pezzi, wall kick, livelli a velocità crescente |
 | **Frogger** (Konami, 1981) | corsie a scorrimento, ritmo | tronchi che trasportano, timer per rana |
 
