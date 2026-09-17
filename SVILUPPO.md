@@ -57,7 +57,7 @@ Ogni riga: cosa lo rende interessante, quanto costa, cosa ha di nuovo rispetto a
 
 ## Decisioni prese
 
-_(vuoto: si compila man mano)_
+- 2026-09-17: si parte con **Breakout** (ramo `breakout`). Regole originali Atari (velocità che sale dopo 4 e 12 colpi e sui mattoni rossi, racchetta che si dimezza quando la palla tocca il soffitto) più i power-up alla Arkanoid.
 
 ## Da fare a livello di repository
 
