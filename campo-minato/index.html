@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Campo minato</title>
+<meta name="description" content="Campo minato in HTML e JavaScript puro: scopri tutte le caselle libere senza far esplodere una mina.">
+<meta name="theme-color" content="#07080f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2307080f'/%3E%3Ccircle cx='16' cy='17' r='8' fill='%23e6eaf7'/%3E%3Cpath d='M16 4v6M16 24v6M3 17h6M23 17h6M7 8l4 4M25 8l-4 4M7 26l4-4M25 26l-4-4' stroke='%23e6eaf7' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='13' cy='14' r='2' fill='%2307080f'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap">
+<style>
+  [hidden]{display:none!important}
+  :root{
+    --bg:#07080f; --panel:#0d1020; --line:#1c2140; --raised:#161b33; --raised-hi:#242b50;
+    --ink:#e6eaf7; --dim:#7f88a8;
+    --accent:#ffe45c; --blue:#7fb3ff; --red:#ff8a7a; --orange:#ff6a2b; --green:#7fe0a0;
+    --n1:#7fb3ff; --n2:#7fe0a0; --n3:#ff8a7a; --n4:#c9a0ff; --n5:#ffb347; --n6:#5fd6d6; --n7:#e6eaf7; --n8:#a0a8c8;
+    --display:'Silkscreen', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --cell:32px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; min-height:100%;
+    background:var(--bg); color:var(--ink);
+    font-family:var(--mono); font-size:13px; line-height:1.4;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    padding-inline:16px; padding-block:10px;
+  }
+
+  .top{
+    width:100%; max-width:980px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between;
+  }
+  .title{font-family:var(--display); font-size:clamp(18px,4vw,26px); color:var(--accent); letter-spacing:.06em; text-shadow:0 0 18px rgba(255,228,92,.3); margin:0}
+  .levels{display:flex; gap:6px; flex-wrap:wrap}
+  .btn{
+    font-family:var(--display); font-size:11px; letter-spacing:.06em; color:var(--dim);
+    background:var(--panel); border:1px solid var(--line); border-bottom-width:3px; border-radius:6px;
+    padding:8px 12px; cursor:pointer; -webkit-tap-highlight-color:transparent; user-select:none;
+  }
+  .btn:hover{color:var(--ink)}
+  .btn.on{color:var(--accent); background:#1a2040}
+  .btn:active{border-bottom-width:1px; transform:translateY(2px)}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  .hud{
+    width:100%; max-width:980px;
+    display:flex; gap:8px 20px; align-items:center; justify-content:space-between;
+    font-family:var(--display);
+  }
+  .stat{display:flex; flex-direction:column; gap:2px; min-width:0}
+  .stat .lab{font-size:9px; letter-spacing:.12em; color:var(--dim); text-transform:uppercase}
+  .stat .val{font-size:22px; color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .stat .val.acc{color:var(--accent)}
+  .stat .val.warn{color:var(--red)}
+  .stat.right{text-align:right}
+  .face{
+    width:54px; height:54px; font-size:28px; line-height:1; padding:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  .stage{
+    position:relative; width:100%; max-width:980px;
+    display:flex; justify-content:center;
+    overflow:auto; -webkit-overflow-scrolling:touch;
+    padding-bottom:4px;
+  }
+  .board{
+    display:grid;
+    grid-template-columns:repeat(var(--cols), var(--cell));
+    grid-auto-rows:var(--cell);
+    gap:2px; padding:6px;
+    background:var(--panel); border:1px solid var(--line);
+    box-shadow:0 0 0 1px #000, 0 0 40px rgba(127,179,255,.08) inset;
+    touch-action:manipulation; user-select:none; -webkit-user-select:none;
+  }
+  .cell{
+    position:relative; width:var(--cell); height:var(--cell);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--display); font-weight:700; font-size:calc(var(--cell) * .5);
+    background:var(--raised); border:1px solid var(--raised-hi); border-bottom-color:#0a0d1c; border-right-color:#0a0d1c;
+    color:var(--ink); cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .cell:hover{background:var(--raised-hi)}
+  .cell:focus-visible{outline:2px solid var(--accent); outline-offset:-2px; z-index:1}
+  .cell.open{background:#090b16; border:1px solid var(--line); cursor:default}
+  .cell.open:hover{background:#090b16}
+  .cell.flag::after{content:'⚑'; color:var(--red); font-size:calc(var(--cell) * .55); text-shadow:0 0 8px rgba(255,138,122,.5)}
+  .cell.mine{background:#1a1224}
+  .cell.mine::after{content:'●'; color:var(--ink); font-size:calc(var(--cell) * .55)}
+  .cell.boom{background:var(--red)}
+  .cell.boom::after{content:'✸'; color:#07080f; font-size:calc(var(--cell) * .7)}
+  .cell.wrong{background:#2a1418}
+  .cell.wrong::after{content:'✕'; color:var(--red); font-size:calc(var(--cell) * .6)}
+  .cell.won.mine{background:#0f2a1a}
+  .cell.won.mine::after{content:'⚑'; color:var(--green)}
+  .cell.n1{color:var(--n1)} .cell.n2{color:var(--n2)} .cell.n3{color:var(--n3)} .cell.n4{color:var(--n4)}
+  .cell.n5{color:var(--n5)} .cell.n6{color:var(--n6)} .cell.n7{color:var(--n7)} .cell.n8{color:var(--n8)}
+  .cell.press{background:#090b16; border-color:var(--line)}
+  .board.lost .cell:not(.open){cursor:default}
+  .board.shake{animation:shake .4s}
+  @keyframes shake{
+    10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(3px)}
+    30%,50%,70%{transform:translateX(-5px)} 40%,60%{transform:translateX(5px)}
+  }
+
+  .overlay{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    text-align:center; padding:20px; background:rgba(7,8,15,.7); cursor:pointer; z-index:2;
+  }
+  .overlay:focus-visible{outline:2px solid var(--accent)}
+  .overlay h2{font-family:var(--display); font-size:clamp(22px,6vw,42px); margin:0; color:var(--accent); letter-spacing:.06em; text-shadow:0 0 18px rgba(255,228,92,.35); text-wrap:balance}
+  .overlay h2.lose{color:var(--red); text-shadow:0 0 18px rgba(255,138,122,.35)}
+  .overlay p{margin:0; max-width:46ch; color:var(--ink); font-size:13px}
+  .overlay .big{font-family:var(--display); font-size:clamp(14px,3.5vw,22px); color:var(--blue)}
+  .overlay .hint{font-family:var(--display); font-size:11px; color:var(--dim); letter-spacing:.1em; animation:blink 1.2s steps(2,start) infinite}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){ .overlay .hint{animation:none} .board.shake{animation:none} }
+
+  .legend{
+    width:100%; max-width:980px; display:flex; flex-wrap:wrap; gap:6px 18px; justify-content:center;
+    color:var(--dim); font-size:12px;
+  }
+  .legend b{color:var(--ink); font-weight:600}
+  kbd{font-family:var(--display); font-size:10px; padding:2px 6px; border:1px solid var(--line); border-bottom-width:3px; background:var(--panel); color:var(--ink); border-radius:3px}
+
+  .pad{display:none; width:100%; max-width:980px; justify-content:center; gap:10px}
+  .pad .btn{flex:1 1 0; padding:14px 8px; font-size:12px}
+  .pad .btn.flagmode.on{color:var(--red)}
+  @media (pointer:coarse){ .pad{display:flex} .legend{display:none} }
+  .mute.on{color:var(--ink)}
+  .best{font-size:11px; color:var(--dim); font-family:var(--display); letter-spacing:.06em}
+  .best b{color:var(--green); font-weight:400}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1 class="title">CAMPO MINATO</h1>
+  <div class="levels" role="group" aria-label="Difficoltà">
+    <button type="button" class="btn" data-level="0">PRINCIPIANTE</button>
+    <button type="button" class="btn" data-level="1">INTERMEDIO</button>
+    <button type="button" class="btn" data-level="2">ESPERTO</button>
+    <button type="button" class="btn mute" id="mute" aria-label="Audio">AUDIO</button>
+  </div>
+</div>
+
+<div class="hud" aria-live="polite">
+  <div class="stat"><span class="lab">Mine</span><span class="val acc" id="mines">010</span></div>
+  <button type="button" class="btn face" id="face" aria-label="Nuova partita">🙂</button>
+  <div class="stat right"><span class="lab">Tempo</span><span class="val" id="time">000</span></div>
+</div>
+
+<div class="stage">
+  <div class="board" id="board" role="grid" aria-label="Campo minato"></div>
+  <div class="overlay" id="overlay" tabindex="0" role="button" hidden>
+    <h2 id="ov-title">CAMPO LIBERO</h2>
+    <p id="ov-text"></p>
+    <p id="ov-big" class="big"></p>
+    <p class="hint">PREMI INVIO O TOCCA PER RIGIOCARE</p>
+  </div>
+</div>
+
+<div class="best" id="best"></div>
+
+<div class="legend">
+  <span><b>Clic sinistro</b> scopre</span>
+  <span><b>Clic destro</b> bandierina</span>
+  <span><b>Clic su un numero</b> scopre le caselle intorno se le bandierine bastano</span>
+  <span><kbd>R</kbd> nuova partita</span>
+  <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> difficoltà</span>
+  <span><kbd>M</kbd> audio</span>
+</div>
+
+<div class="pad">
+  <button type="button" class="btn flagmode" id="flagmode" aria-pressed="false">⚑ MODALITÀ BANDIERINA</button>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- Livelli ---------- */
+const LEVELS = [
+  { name: 'Principiante', cols: 9,  rows: 9,  mines: 10 },
+  { name: 'Intermedio',   cols: 16, rows: 16, mines: 40 },
+  { name: 'Esperto',      cols: 30, rows: 16, mines: 99 }
+];
+
+/* ---------- Stato ---------- */
+const S = {
+  level: 1, cols: 0, rows: 0, mines: 0,
+  mine: null, adj: null, open: null, flag: null,
+  started: false, over: false, won: false,
+  opened: 0, flags: 0, time: 0, timer: null,
+  flagMode: false, best: [null, null, null]
+};
+let cells = [];
+
+try { S.level = Math.min(2, Math.max(0, parseInt(localStorage.getItem('cm-level') || '1', 10) || 0)); } catch (e) {}
+for (let i = 0; i < 3; i++) {
+  try { const v = parseInt(localStorage.getItem('cm-best-' + i) || '', 10); if (v > 0) S.best[i] = v; } catch (e) {}
+}
+
+/* ---------- Audio (sintesi Web Audio, nessun file) ---------- */
+let muted = false, actx = null;
+try { muted = localStorage.getItem('cm-mute') === '1'; } catch (e) {}
+function audioInit() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+}
+function tone(f0, f1, dur, type, vol, t0) {
+  const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + (t0 || 0);
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+function sfx(name) {
+  if (muted || !actx || actx.state !== 'running') return;
+  switch (name) {
+    case 'open': tone(900, 700, 0.04, 'square', 0.03); break;
+    case 'flood': [700, 850, 1000].forEach((f, i) => tone(f, f, 0.04, 'square', 0.025, i * 0.03)); break;
+    case 'flag': tone(500, 800, 0.06, 'triangle', 0.06); break;
+    case 'unflag': tone(800, 500, 0.06, 'triangle', 0.05); break;
+    case 'boom': tone(200, 30, 0.6, 'sawtooth', 0.14); tone(120, 25, 0.8, 'square', 0.08, 0.04); break;
+    case 'win': [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.16, 'square', 0.06, i * 0.09)); break;
+    case 'tick': tone(1500, 1500, 0.02, 'square', 0.012); break;
+  }
+}
+
+/* ---------- DOM ---------- */
+const $ = id => document.getElementById(id);
+const boardEl = $('board'), overlay = $('overlay'), ovTitle = $('ov-title'), ovText = $('ov-text'), ovBig = $('ov-big');
+const minesEl = $('mines'), timeEl = $('time'), faceEl = $('face'), bestEl = $('best');
+const muteBtn = $('mute'), flagBtn = $('flagmode');
+const levelBtns = Array.from(document.querySelectorAll('[data-level]'));
+
+const pad3 = n => String(Math.max(0, Math.min(999, n))).padStart(3, '0');
+const fmtT = s => s + ' s';
+
+/* ---------- Griglia ---------- */
+const I = (x, y) => y * S.cols + x;
+function neighbors(i) {
+  const x = i % S.cols, y = (i - x) / S.cols, out = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue;
+    const nx = x + dx, ny = y + dy;
+    if (nx >= 0 && ny >= 0 && nx < S.cols && ny < S.rows) out.push(I(nx, ny));
+  }
+  return out;
+}
+
+function newGame(level) {
+  if (level !== undefined) S.level = level;
+  try { localStorage.setItem('cm-level', String(S.level)); } catch (e) {}
+  const L = LEVELS[S.level];
+  S.cols = L.cols; S.rows = L.rows; S.mines = L.mines;
+  const n = S.cols * S.rows;
+  S.mine = new Uint8Array(n); S.adj = new Uint8Array(n); S.open = new Uint8Array(n); S.flag = new Uint8Array(n);
+  S.started = false; S.over = false; S.won = false; S.opened = 0; S.flags = 0; S.time = 0;
+  stopTimer();
+
+  boardEl.style.setProperty('--cols', S.cols);
+  boardEl.className = 'board';
+  boardEl.innerHTML = '';
+  cells = [];
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement('div');
+    c.className = 'cell'; c.dataset.i = i; c.setAttribute('role', 'gridcell');
+    c.setAttribute('aria-label', 'Casella coperta');
+    c.tabIndex = i === 0 ? 0 : -1;
+    frag.appendChild(c); cells.push(c);
+  }
+  boardEl.appendChild(frag);
+  overlay.hidden = true;
+  faceEl.textContent = '🙂';
+  levelBtns.forEach(b => b.classList.toggle('on', +b.dataset.level === S.level));
+  fitCells();
+  updateHud();
+}
+
+/* Le mine vengono piazzate al primo clic: la casella scelta e le sue vicine restano libere. */
+function placeMines(safe) {
+  const n = S.cols * S.rows;
+  const forbidden = new Set([safe, ...neighbors(safe)]);
+  const pool = [];
+  for (let i = 0; i < n; i++) if (!forbidden.has(i)) pool.push(i);
+  // Fisher-Yates parziale: estraggo S.mines indici dal pool
+  for (let k = 0; k < S.mines && pool.length; k++) {
+    const j = k + Math.floor(Math.random() * (pool.length - k));
+    [pool[k], pool[j]] = [pool[j], pool[k]];
+    S.mine[pool[k]] = 1;
+  }
+  for (let i = 0; i < n; i++) {
+    if (S.mine[i]) continue;
+    let a = 0; for (const j of neighbors(i)) a += S.mine[j];
+    S.adj[i] = a;
+  }
+}
+
+function fitCells() {
+  const avail = Math.max(200, document.body.clientWidth - 32);
+  const size = Math.floor((avail - 14 - (S.cols - 1) * 2) / S.cols);
+  const cell = Math.max(24, Math.min(34, size));
+  document.documentElement.style.setProperty('--cell', cell + 'px');
+}
+
+/* ---------- Timer ---------- */
+function startTimer() {
+  stopTimer();
+  S.timer = setInterval(() => {
+    S.time = Math.min(999, S.time + 1);
+    timeEl.textContent = pad3(S.time);
+    timeEl.classList.toggle('warn', S.time >= 999);
+    if (S.time % 10 === 0) sfx('tick');
+  }, 1000);
+}
+function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
+
+/* ---------- Azioni ---------- */
+function reveal(start) {
+  if (S.over || S.open[start] || S.flag[start]) return;
+  if (!S.started) { placeMines(start); S.started = true; startTimer(); }
+  if (S.mine[start]) return lose(start);
+
+  const stack = [start]; let count = 0;
+  while (stack.length) {
+    const i = stack.pop();
+    if (S.open[i] || S.flag[i]) continue;
+    S.open[i] = 1; S.opened++; count++;
+    paint(i);
+    if (S.adj[i] === 0) for (const j of neighbors(i)) if (!S.open[j] && !S.mine[j]) stack.push(j);
+  }
+  sfx(count > 1 ? 'flood' : 'open');
+  checkWin();
+}
+
+function toggleFlag(i) {
+  if (S.over || S.open[i]) return;
+  S.flag[i] ^= 1;
+  S.flags += S.flag[i] ? 1 : -1;
+  sfx(S.flag[i] ? 'flag' : 'unflag');
+  paint(i); updateHud();
+}
+
+/* Clic su un numero già scoperto: se le bandierine intorno bastano, scopre tutto il resto. */
+function chord(i) {
+  if (S.over || !S.open[i] || !S.adj[i]) return;
+  const nb = neighbors(i);
+  let f = 0; for (const j of nb) f += S.flag[j];
+  if (f !== S.adj[i]) return;
+  for (const j of nb) {
+    if (S.open[j] || S.flag[j]) continue;
+    if (S.mine[j]) return lose(j);
+    reveal(j);
+    if (S.over) return;
+  }
+}
+
+function pressAround(i, on) {
+  if (S.over || !S.open[i]) return;
+  for (const j of neighbors(i)) if (!S.open[j] && !S.flag[j]) cells[j].classList.toggle('press', on);
+}
+
+function lose(hit) {
+  S.over = true; stopTimer();
+  boardEl.classList.add('lost', 'shake');
+  faceEl.textContent = '😵';
+  sfx('boom');
+  for (let i = 0; i < S.mine.length; i++) {
+    if (S.mine[i] && !S.flag[i]) { S.open[i] = 1; cells[i].className = 'cell open mine'; cells[i].setAttribute('aria-label', 'Mina'); }
+    else if (!S.mine[i] && S.flag[i]) { cells[i].className = 'cell open wrong'; cells[i].setAttribute('aria-label', 'Bandierina sbagliata'); }
+  }
+  cells[hit].className = 'cell open boom';
+  cells[hit].setAttribute('aria-label', 'Mina esplosa');
+  showOverlay(false);
+}
+
+function checkWin() {
+  if (S.opened !== S.cols * S.rows - S.mines) return;
+  S.over = true; S.won = true; stopTimer();
+  faceEl.textContent = '😎';
+  sfx('win');
+  for (let i = 0; i < S.mine.length; i++) if (S.mine[i]) { cells[i].className = 'cell won mine'; cells[i].setAttribute('aria-label', 'Mina segnalata'); }
+  S.flags = S.mines;
+  let record = false;
+  if (S.best[S.level] === null || S.time < S.best[S.level]) {
+    S.best[S.level] = S.time; record = true;
+    try { localStorage.setItem('cm-best-' + S.level, String(S.time)); } catch (e) {}
+  }
+  updateHud();
+  showOverlay(true, record);
+}
+
+function showOverlay(won, record) {
+  ovTitle.textContent = won ? 'CAMPO LIBERO' : 'BOOM';
+  ovTitle.classList.toggle('lose', !won);
+  ovText.textContent = won
+    ? `Hai scoperto tutte le caselle libere del livello ${LEVELS[S.level].name} in ${fmtT(S.time)}.`
+    : `Una mina era proprio lì. Ti restavano ${S.cols * S.rows - S.mines - S.opened} caselle da scoprire.`;
+  ovBig.textContent = won ? (record ? 'NUOVO RECORD!' : `Record: ${fmtT(S.best[S.level])}`) : '';
+  ovBig.hidden = !ovBig.textContent;
+  overlay.hidden = false;
+  overlay.focus({ preventScroll: true });
+}
+
+/* ---------- Rendering ---------- */
+function paint(i) {
+  const c = cells[i];
+  if (S.open[i]) {
+    const a = S.adj[i];
+    c.className = 'cell open' + (a ? ' n' + a : '');
+    c.textContent = a ? a : '';
+    c.setAttribute('aria-label', a ? `${a} mine vicine` : 'Vuota');
+  } else {
+    c.className = 'cell' + (S.flag[i] ? ' flag' : '');
+    c.textContent = '';
+    c.setAttribute('aria-label', S.flag[i] ? 'Bandierina' : 'Casella coperta');
+  }
+}
+
+function updateHud() {
+  const left = S.mines - S.flags;
+  minesEl.textContent = (left < 0 ? '-' : '') + pad3(Math.abs(left));
+  minesEl.classList.toggle('warn', left < 0);
+  timeEl.textContent = pad3(S.time);
+  timeEl.classList.remove('warn');
+  const b = S.best[S.level];
+  bestEl.innerHTML = b === null
+    ? `${LEVELS[S.level].name}: ${S.cols}×${S.rows}, ${S.mines} mine. Nessun record ancora.`
+    : `${LEVELS[S.level].name}: ${S.cols}×${S.rows}, ${S.mines} mine. Record <b>${fmtT(b)}</b>`;
+}
+
+/* ---------- Input: mouse / touch ---------- */
+let pressTimer = null, pressed = -1, longPressed = false, chording = -1;
+const cellOf = ev => { const t = ev.target.closest('.cell'); return t ? +t.dataset.i : -1; };
+
+boardEl.addEventListener('contextmenu', ev => ev.preventDefault());
+
+boardEl.addEventListener('pointerdown', ev => {
+  audioInit();
+  const i = cellOf(ev); if (i < 0 || S.over) return;
+  if (ev.pointerType === 'mouse') {
+    if (ev.button === 2) { toggleFlag(i); return; }
+    if (ev.button !== 0) return;
+    if (S.open[i]) { chording = i; pressAround(i, true); }
+    else if (!S.flag[i]) { cells[i].classList.add('press'); pressed = i; faceEl.textContent = '😮'; }
+    return;
+  }
+  // Touch/penna: pressione lunga = bandierina
+  longPressed = false; pressed = i;
+  if (!S.open[i]) cells[i].classList.add('press');
+  pressTimer = setTimeout(() => {
+    longPressed = true; cells[i].classList.remove('press');
+    if (!S.open[i]) { toggleFlag(i); if (navigator.vibrate) navigator.vibrate(30); }
+  }, 350);
+});
+
+function clearPress() {
+  if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+  if (pressed >= 0 && cells[pressed]) cells[pressed].classList.remove('press');
+  if (chording >= 0) pressAround(chording, false);
+  if (!S.over) faceEl.textContent = '🙂';
+}
+
+boardEl.addEventListener('pointerup', ev => {
+  const i = cellOf(ev);
+  const wasPressed = pressed, wasChord = chording;
+  clearPress(); pressed = -1; chording = -1;
+  if (S.over || i < 0) return;
+  if (ev.pointerType === 'mouse') {
+    if (ev.button !== 0) return;
+    if (wasChord === i) chord(i);
+    else if (wasPressed === i) reveal(i);
+    return;
+  }
+  if (longPressed || wasPressed !== i) return;
+  if (S.open[i]) chord(i);
+  else if (S.flagMode) toggleFlag(i);
+  else reveal(i);
+});
+boardEl.addEventListener('pointercancel', () => { clearPress(); pressed = -1; chording = -1; });
+boardEl.addEventListener('pointerleave', () => { clearPress(); pressed = -1; chording = -1; });
+boardEl.addEventListener('pointermove', ev => {
+  if (pressed < 0 || ev.pointerType === 'mouse') return;
+  if (cellOf(ev) !== pressed) { clearPress(); pressed = -1; }
+});
+
+/* ---------- Input: tastiera sulla griglia ---------- */
+let focusI = 0;
+boardEl.addEventListener('keydown', ev => {
+  const i = cellOf(ev); if (i < 0) return;
+  const x = i % S.cols, y = (i - x) / S.cols;
+  let nx = x, ny = y;
+  switch (ev.key) {
+    case 'ArrowLeft': nx--; break; case 'ArrowRight': nx++; break;
+    case 'ArrowUp': ny--; break; case 'ArrowDown': ny++; break;
+    case 'Enter': case ' ': ev.preventDefault(); S.open[i] ? chord(i) : reveal(i); return;
+    case 'f': case 'F': ev.preventDefault(); toggleFlag(i); return;
+    default: return;
+  }
+  ev.preventDefault();
+  nx = Math.max(0, Math.min(S.cols - 1, nx)); ny = Math.max(0, Math.min(S.rows - 1, ny));
+  const j = I(nx, ny);
+  cells[focusI].tabIndex = -1; cells[j].tabIndex = 0; cells[j].focus(); focusI = j;
+});
+
+/* ---------- Input: comandi globali ---------- */
+document.addEventListener('keydown', ev => {
+  if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+  switch (ev.key) {
+    case 'r': case 'R': newGame(); break;
+    case '1': newGame(0); break;
+    case '2': newGame(1); break;
+    case '3': newGame(2); break;
+    case 'm': case 'M': toggleMute(); break;
+    case 'Enter': if (!overlay.hidden) newGame(); break;
+  }
+});
+overlay.addEventListener('click', () => newGame());
+faceEl.addEventListener('click', () => { audioInit(); newGame(); });
+levelBtns.forEach(b => b.addEventListener('click', () => { audioInit(); newGame(+b.dataset.level); }));
+flagBtn.addEventListener('click', () => {
+  S.flagMode = !S.flagMode;
+  flagBtn.classList.toggle('on', S.flagMode);
+  flagBtn.setAttribute('aria-pressed', String(S.flagMode));
+});
+
+function toggleMute() {
+  muted = !muted;
+  try { localStorage.setItem('cm-mute', muted ? '1' : '0'); } catch (e) {}
+  muteBtn.classList.toggle('on', !muted);
+  muteBtn.textContent = muted ? 'MUTO' : 'AUDIO';
+}
+muteBtn.addEventListener('click', () => { audioInit(); toggleMute(); });
+muteBtn.classList.toggle('on', !muted);
+muteBtn.textContent = muted ? 'MUTO' : 'AUDIO';
+
+window.addEventListener('resize', fitCells);
+document.addEventListener('visibilitychange', () => { if (document.hidden && actx) actx.suspend(); else if (actx) actx.resume(); });
+
+newGame();
+})();
+</script>
+</body>
+</html>
