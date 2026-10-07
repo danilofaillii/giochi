@@ -150,7 +150,7 @@ footer p{margin:0}
   <footer>
     <p>Traiettoria, vento e gravità seguono le stesse formule del .BAS del 1991: x = x0 + vx·t + ½·(vento/5)·t², y = y0 − vy·t + ½·g·t². Il sole si stupisce ancora.</p>
     <p>Le tre stringhe PLAY originali (intro, esplosione, danza) passano da un piccolo interprete PLAY in Web Audio, onda quadra come lo speaker del PC. Trasposte due ottave in su: l'ottava 0 di QBasic sulle casse di un telefono non esiste.</p>
-    <p>Online: la partita è un seme e una lista di tiri. Ogni browser ricostruisce la stessa città e lo stesso esito, senza fidarsi dell'altro.</p>
+    <p>Online: la partita è un seme e una lista di tiri. Ogni browser ricostruisce la stessa città e lo stesso esito, senza fidarsi dell'altro. Su un hosting qualsiasi bastano api.php e un database MySQL.</p>
   </footer>
 </main>
 
@@ -789,16 +789,20 @@ footer p{margin:0}
   }
 
   /* ---------- Online ----------
-     Lo store condiviso del runtime degli Artifact (claude.use('db')). La partita è un documento:
-     chi la apre, chi entra, il seme, le impostazioni e la lista dei tiri. Ogni browser rigioca i tiri
-     sulla stessa città deterministica: nessuno deve fidarsi del risultato calcolato dall'altro. */
+     La partita è un documento: chi la apre, chi entra, il seme, le impostazioni e la lista dei tiri.
+     Ogni browser rigioca i tiri sulla stessa città deterministica: nessuno deve fidarsi del risultato
+     calcolato dall'altro. Due trasporti con la stessa interfaccia:
+       - claude: lo store condiviso del runtime degli Artifact (pagina aperta da claude.ai);
+       - php:    api.php + MySQL su un hosting qualsiasi, interrogato ogni secondo e mezzo.
+     La pagina prova il primo, poi il secondo, altrimenti spegne l'online e dice perché. */
+  const API_URL = 'api.php';
   const NET = {
-    db: null, user: null, myId: null, lobbyVisible: false, canPlay: false,
-    gameRef: null, unsubGame: null, unsubLobby: null, role: null, doc: null,
+    T: null, myId: null, lobbyVisible: false, canPlay: false,
+    gameId: null, unsubGame: null, unsubLobby: null, role: null, doc: null,
     pending: [],
     finish(winner) {
-      if (!this.gameRef || this.role !== 'host' || !this.doc || this.doc.status === 'done') return;
-      this.gameRef.update({ status: 'done', winner }).catch(() => {});
+      if (!this.T || !this.gameId || this.role !== 'host' || !this.doc || this.doc.status === 'done') return;
+      this.T.finish(this.gameId, winner).catch(() => {});
     }
   };
 
@@ -806,11 +810,148 @@ footer p{margin:0}
     let id = null;
     try { id = localStorage.getItem('gorillas.id'); } catch (e) { /* niente */ }
     if (!id) {
-      id = 'g_' + Math.random().toString(36).slice(2, 12);
+      id = 'g_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8);
       try { localStorage.setItem('gorillas.id', id); } catch (e) { /* niente */ }
     }
     return id;
   }
+
+  // Un documento di partita normalizzato: { status, hostName, guestName, role, seed, ptw, gravity, difficulty, shots, winner, left, created }
+  const claudeTransport = {
+    db: null,
+    async init() {
+      if (!(window.claude && typeof window.claude.use === 'function')) return null;
+      const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      if (!db) return { ok: false, why: 'non disponibile per questa vista: serve essere collegati.' };
+      this.db = db;
+      NET.myId = (user ? await user.id() : null) || localId();
+      const can = user ? await user.can('data.write') : null;
+      if (can === false) return { ok: true, canPlay: false, why: 'puoi guardare le partite ma non giocare: chiedi a chi ha pubblicato la pagina di invitarti come Contributor.' };
+      return { ok: true, canPlay: true };
+    },
+    norm(d) {
+      return {
+        status: d.status, hostName: d.hostName, guestName: d.guestName,
+        role: d.host === NET.myId ? 'host' : d.guest === NET.myId ? 'guest' : null,
+        seed: d.seed, ptw: d.ptw, gravity: d.gravity, difficulty: d.difficulty,
+        shots: Array.isArray(d.shots) ? d.shots : [], winner: d.winner, left: d.left || null, created: d.created
+      };
+    },
+    watchLobby(cb, onErr) {
+      const q = this.db.collection('games').where('status', '==', 'waiting').orderBy('created', 'desc').limit(20);
+      return q.onSnapshot(snap => cb(snap.docs.map(s => Object.assign({ id: s.id }, this.norm(s.data() || {}), { mine: (s.data() || {}).host === NET.myId }))), onErr);
+    },
+    async create(doc) {
+      const ref = await this.db.collection('games').add(Object.assign({ host: NET.myId, guest: null, guestName: null, winner: null }, doc));
+      return ref.id;
+    },
+    async join(id, name) {
+      const ref = this.db.doc('games/' + id);
+      const lease = await ref.acquire({ holder: NET.myId, ttlMs: 5000 });
+      if (!lease.acquired) throw { code: 'busy' };
+      const snap = await ref.get();
+      const cur = snap.data();
+      if (!snap.exists || !cur || cur.status !== 'waiting' || cur.guest) throw { code: 'taken' };
+      if (cur.host === NET.myId) throw { code: 'own' };
+      await ref.update({ guest: NET.myId, guestName: name, status: 'playing', started: new Date().toISOString() });
+    },
+    watch(id, cb, onErr) {
+      return this.db.doc('games/' + id).onSnapshot(snap => cb(snap.exists ? this.norm(snap.data()) : null), onErr);
+    },
+    async get(id) {
+      const snap = await this.db.doc('games/' + id).get();
+      return snap.exists ? this.norm(snap.data()) : null;
+    },
+    async shot(id, shots) { await this.db.doc('games/' + id).update({ shots }); },
+    async leave(id, status, abandon, role) {
+      const ref = this.db.doc('games/' + id);
+      if (status === 'waiting') await ref.delete();
+      else if (status === 'playing' && abandon) await ref.update({ status: 'done', left: role, winner: role === 'host' ? 1 : 0 });
+    },
+    async finish(id, winner) { await this.db.doc('games/' + id).update({ status: 'done', winner }); }
+  };
+
+  const phpTransport = {
+    async api(action, body, query) {
+      const qs = new URLSearchParams(Object.assign({ a: action, me: NET.myId }, query || {}));
+      const res = await fetch(API_URL + '?' + qs, body
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ me: NET.myId }, body)), cache: 'no-store' }
+        : { cache: 'no-store' });
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* non è JSON */ }
+      if (!res.ok || !data || data.error) throw { code: (data && data.error) || ('http_' + res.status), message: data && data.message };
+      return data;
+    },
+    async init() {
+      NET.myId = localId();
+      if (location.protocol === 'file:') return null;
+      try {
+        const r = await this.api('ping');
+        return r && r.ok ? { ok: true, canPlay: true } : null;
+      } catch (e) {
+        if (e.code === 'no_config' || e.code === 'bad_config' || e.code === 'db_connect') return { ok: false, why: 'api.php c\'è ma il database no: ' + (e.message || e.code) };
+        return null;
+      }
+    },
+    poll(fn, everyMs) {
+      let stop = false, timer = null;
+      const tick = async () => {
+        if (stop) return;
+        try { await fn(); } catch (e) { /* il prossimo giro riprova */ }
+        if (!stop) timer = setTimeout(tick, document.visibilityState === 'hidden' ? everyMs * 3 : everyMs);
+      };
+      tick();
+      return () => { stop = true; clearTimeout(timer); };
+    },
+    watchLobby(cb, onErr) {
+      let lastJson = null, failures = 0;
+      return this.poll(async () => {
+        if (G.state !== 'setup') return;
+        try {
+          const r = await this.api('list');
+          failures = 0;
+          const j = JSON.stringify(r.games);
+          if (j !== lastJson) { lastJson = j; cb(r.games.map(g => Object.assign({}, g, { mine: g.role === 'host' }))); }
+        } catch (e) { if (++failures === 3) onErr(e); }
+      }, 3000);
+    },
+    async create(doc) {
+      return (await this.api('create', { name: doc.hostName, seed: doc.seed, ptw: doc.ptw, gravity: doc.gravity, difficulty: doc.difficulty })).game.id;
+    },
+    async join(id, name) { this.push(id, (await this.api('join', { id, name })).game); },
+    // Una risposta che contiene già la partita aggiornata: la consegno subito a chi ascolta, senza aspettare il giro di polling.
+    push(id, game) {
+      if (this.current && this.current.id === id && game && game.v > this.current.v) { this.current.v = game.v; this.current.cb(game); }
+    },
+    current: null,
+    watch(id, cb, onErr) {
+      const cur = { id, cb, v: 0 };
+      this.current = cur;
+      let failures = 0;
+      const stop = this.poll(async () => {
+        try {
+          const r = await this.api('get', null, { id, v: cur.v });
+          failures = 0;
+          if (r.unchanged || r.game.v <= cur.v) return;
+          cur.v = r.game.v;
+          cb(r.game);
+        } catch (e) {
+          if (e.code === 'gone') { cb(null); return; }
+          if (++failures === 8) onErr(e);
+        }
+      }, 1500);
+      return () => { stop(); if (this.current === cur) this.current = null; };
+    },
+    async get(id) {
+      try { return (await this.api('get', null, { id })).game; } catch (e) { return null; }
+    },
+    async shot(id, shots) {
+      const [a, v] = shots[shots.length - 1];
+      this.push(id, (await this.api('shot', { id, n: shots.length - 1, a, v })).game);
+    },
+    async leave(id) { await this.api('leave', { id }); },
+    async finish(id, winner) { await this.api('finish', { id, winner }); }
+  };
 
   function setOnlineAvailable(ok, why) {
     const lab = $('onlinelabel');
@@ -823,52 +964,30 @@ footer p{margin:0}
   }
 
   async function initOnline() {
-    if (!(window.claude && typeof window.claude.use === 'function')) {
-      setOnlineAvailable(false, 'Online funziona solo sulla pagina pubblicata su claude.ai.');
+    let r = null;
+    for (const T of [claudeTransport, phpTransport]) {
+      r = await T.init();
+      if (r) { NET.T = T; break; }
+    }
+    if (!r) {
+      setOnlineAvailable(false, location.protocol === 'file:'
+        ? 'funziona dalla pagina pubblicata su claude.ai o da un server con api.php e un database.'
+        : 'sul server manca api.php (o il database). Vedi config.sample.php.');
       return;
     }
-    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
-    if (!db) {
-      setOnlineAvailable(false, 'Online non disponibile per questa vista: serve essere collegati.');
-      return;
-    }
-    NET.db = db; NET.user = user;
-    NET.myId = (user ? await user.id() : null) || localId();
-    const can = user ? await user.can('data.write') : null;
+    if (!r.ok) { setOnlineAvailable(false, r.why); return; }
     NET.lobbyVisible = true;
     if (G.state === 'setup') $('lobby').hidden = false;
-    if (can === false) {
-      setOnlineAvailable(false, 'Puoi guardare le partite ma non giocare online: chiedi a chi ha pubblicato la pagina di invitarti come Contributor.');
-      $('lobbyhint').textContent = 'Puoi vedere le partite in attesa ma non entrare: chiedi a chi ha pubblicato la pagina di invitarti come Contributor.';
-    } else setOnlineAvailable(true);
+    setOnlineAvailable(r.canPlay, r.why || '');
+    if (!r.canPlay) $('lobbyhint').textContent = 'Puoi vedere le partite in attesa ma non entrare: chiedi a chi ha pubblicato la pagina di invitarti come Contributor.';
     subscribeLobby();
-    if (can !== false) resumeSaved();
-  }
-
-  // Pagina ricaricata a metà partita (sul telefono succede): se la partita è ancora viva, ci rientro.
-  async function resumeSaved() {
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem('gorillas.game') || 'null'); } catch (e) { /* niente */ }
-    if (!saved || !saved.id || G.state !== 'setup') return;
-    const ref = NET.db.doc('games/' + saved.id);
-    let snap;
-    try { snap = await ref.get(); } catch (e) { return; }
-    const d = snap.exists && snap.data();
-    const mine = d && (d.host === NET.myId ? 'host' : d.guest === NET.myId ? 'guest' : null);
-    if (!d || !mine || d.status === 'done' || G.state !== 'setup') {
-      try { localStorage.removeItem('gorillas.game'); } catch (e) { /* niente */ }
-      return;
-    }
-    attachGame(ref, mine);
-    if (d.status === 'waiting') { G.state = 'waiting'; show('waiting'); }
+    if (r.canPlay) resumeSaved();
   }
 
   function subscribeLobby() {
     if (NET.unsubLobby) return;
-    const q = NET.db.collection('games').where('status', '==', 'waiting').orderBy('created', 'desc').limit(20);
-    NET.unsubLobby = q.onSnapshot(renderLobby, err => {
-      NET.unsubLobby = null;
-      $('lobbyhint').textContent = 'La lista delle partite non risponde (' + err.code + ').';
+    NET.unsubLobby = NET.T.watchLobby(renderLobby, err => {
+      $('lobbyhint').textContent = 'La lista delle partite non risponde (' + (err && err.code || 'errore') + ').';
     });
   }
 
@@ -879,19 +998,18 @@ footer p{margin:0}
     return m === 0 ? 'adesso' : m === 1 ? '1 minuto fa' : m + ' minuti fa';
   }
 
-  function renderLobby(snap) {
+  function renderLobby(games) {
     const ul = $('games');
     ul.textContent = '';
     const cutoff = Date.now() - 2 * 3600 * 1000;   // partite aperte e dimenticate: non le mostro
     let n = 0;
-    for (const d of snap.docs) {
-      const g = d.data();
+    for (const g of games) {
       if (!g || Date.parse(g.created || 0) < cutoff) continue;
       n++;
       const li = document.createElement('li');
       const left = document.createElement('div');
       const who = document.createElement('div'); who.className = 'who';
-      who.textContent = (g.hostName || 'Qualcuno') + (g.host === NET.myId ? ' (tu)' : '');
+      who.textContent = (g.hostName || 'Qualcuno') + (g.mine ? ' (tu)' : '');
       const meta = document.createElement('div'); meta.className = 'meta';
       meta.textContent = [
         'Difficoltà ' + (g.difficulty || 'normale'),
@@ -902,13 +1020,13 @@ footer p{margin:0}
       left.append(who, meta);
       const btn = document.createElement('button');
       btn.type = 'button';
-      if (g.host === NET.myId) {
+      if (g.mine) {
         btn.textContent = 'Riprendi';
-        btn.addEventListener('click', () => resumeHosted(d.id));
+        btn.addEventListener('click', () => { attachGame(g.id, 'host'); G.state = 'waiting'; show('waiting'); });
       } else {
         btn.textContent = 'Entra';
         btn.disabled = !NET.canPlay;
-        btn.addEventListener('click', () => joinGame(d.id, g));
+        btn.addEventListener('click', () => joinGame(g.id));
       }
       li.append(left, btn);
       ul.appendChild(li);
@@ -923,15 +1041,13 @@ footer p{margin:0}
 
   async function hostGame() {
     const doc = {
-      status: 'waiting', created: new Date().toISOString(),
-      host: NET.myId, hostName: myName(), guest: null, guestName: null,
-      seed: freshSeed(), ptw: G.ptw, gravity: G.gravity, difficulty: G.difficulty,
-      shots: [], winner: null
+      status: 'waiting', created: new Date().toISOString(), hostName: myName(),
+      seed: freshSeed(), ptw: G.ptw, gravity: G.gravity, difficulty: G.difficulty, shots: []
     };
     $('play').disabled = true;
     try {
-      const ref = await NET.db.collection('games').add(doc);
-      attachGame(ref, 'host');
+      const id = await NET.T.create(doc);
+      attachGame(id, 'host');
       G.state = 'waiting';
       show('waiting');
     } catch (e) {
@@ -939,53 +1055,43 @@ footer p{margin:0}
     } finally { $('play').disabled = false; }
   }
 
-  function resumeHosted(id) {
-    attachGame(NET.db.doc('games/' + id), 'host');
-    G.state = 'waiting';
-    show('waiting');
-  }
-
-  async function joinGame(id, g) {
+  const JOIN_ERR = {
+    busy: 'Qualcun altro sta entrando proprio ora. Riprova tra un attimo.',
+    taken: 'Troppo tardi: quella partita non è più libera.',
+    gone: 'Quella partita non c\'è più.',
+    own: 'È la tua partita: aspetta che entri qualcun altro.'
+  };
+  async function joinGame(id) {
     $('setuperr').textContent = '';
-    const ref = NET.db.doc('games/' + id);
     try {
-      const lease = await ref.acquire({ holder: NET.myId, ttlMs: 5000 });
-      if (!lease.acquired) { $('setuperr').textContent = 'Qualcun altro sta entrando proprio ora. Riprova tra un attimo.'; return; }
-      const snap = await ref.get();
-      const cur = snap.data();
-      if (!snap.exists || !cur || cur.status !== 'waiting' || cur.guest) {
-        $('setuperr').textContent = 'Troppo tardi: quella partita non è più libera.';
-        return;
-      }
-      await ref.update({ guest: NET.myId, guestName: myName(), status: 'playing', started: new Date().toISOString() });
-      attachGame(ref, 'guest');
+      await NET.T.join(id, myName());
+      attachGame(id, 'guest');
     } catch (e) {
-      $('setuperr').textContent = 'Non riesco a entrare (' + (e && e.code || 'errore') + ').';
+      $('setuperr').textContent = JOIN_ERR[e && e.code] || ('Non riesco a entrare (' + (e && e.code || 'errore') + ').');
     }
   }
 
-  function attachGame(ref, role) {
+  function attachGame(id, role) {
     detachGame();
-    NET.gameRef = ref; NET.role = role; NET.doc = null; NET.pending = [];
-    try { localStorage.setItem('gorillas.game', JSON.stringify({ id: ref.id, role })); } catch (e) { /* niente */ }
-    NET.unsubGame = ref.onSnapshot(onGameDoc, err => {
-      if (G.state !== 'setup') gameOver(G.me, 'La connessione alla partita si è interrotta (' + err.code + ').');
+    NET.gameId = id; NET.role = role; NET.doc = null; NET.pending = [];
+    try { localStorage.setItem('gorillas.game', JSON.stringify({ id, role })); } catch (e) { /* niente */ }
+    NET.unsubGame = NET.T.watch(id, onGameDoc, err => {
+      if (G.state !== 'setup') gameOver(G.me, 'La connessione alla partita si è interrotta (' + (err && err.code || 'errore') + ').');
     });
   }
 
   function detachGame() {
     try { localStorage.removeItem('gorillas.game'); } catch (e) { /* niente */ }
     if (NET.unsubGame) NET.unsubGame();
-    NET.unsubGame = null; NET.gameRef = null; NET.role = null; NET.doc = null; NET.pending = [];
+    NET.unsubGame = null; NET.gameId = null; NET.role = null; NET.doc = null; NET.pending = [];
   }
 
-  function onGameDoc(snap) {
-    if (!snap.exists) {
+  function onGameDoc(d) {
+    if (!d) {
       if (NET.role === 'guest' && G.state !== 'setup' && G.state !== 'over') gameOver(G.me, 'Chi aveva aperto la partita l\'ha chiusa.');
       if (NET.role === 'host' && G.state === 'waiting') backToSetup();
       return;
     }
-    const d = snap.data();
     const prev = NET.doc;
     NET.doc = d;
     if (d.status === 'waiting') return;
@@ -997,12 +1103,10 @@ footer p{margin:0}
         me: NET.role === 'host' ? 0 : 1
       });
     }
-    const shots = Array.isArray(d.shots) ? d.shots : [];
-    NET.pending = shots.slice(G.shots.length);
+    NET.pending = d.shots.slice(G.shots.length);
     drainShots();
-    if (d.status === 'done' && G.state !== 'over' && G.state !== 'setup') {
-      const w = typeof d.winner === 'number' ? d.winner : G.me;
-      if (w === G.me && d.left) gameOver(G.me, 'L\'avversario ha lasciato la partita. Vinci a tavolino.');
+    if (d.status === 'done' && G.state !== 'over' && G.state !== 'setup' && d.left && d.left !== NET.role) {
+      gameOver(G.me, 'L\'avversario ha lasciato la partita. Vinci a tavolino.');
     }
   }
 
@@ -1017,9 +1121,8 @@ footer p{margin:0}
   }
 
   async function sendShot(a, v) {
-    const shots = G.shots.concat([[a, v]]);
     try {
-      await NET.gameRef.update({ shots });
+      await NET.T.shot(NET.gameId, G.shots.concat([[a, v]]));
     } catch (e) {
       $('err').textContent = 'Il tiro non è partito (' + (e && e.code || 'errore') + '). Riprova.';
       return false;
@@ -1028,14 +1131,26 @@ footer p{margin:0}
   }
 
   async function leaveOnline() {
-    const ref = NET.gameRef, role = NET.role, doc = NET.doc;
+    const id = NET.gameId, role = NET.role, doc = NET.doc;
     const abandon = G.state !== 'over' && G.state !== 'setup' && G.state !== 'waiting';
     detachGame();
-    if (!ref) return;
-    try {
-      if (!doc || doc.status === 'waiting') await ref.delete();
-      else if (doc.status === 'playing' && abandon) await ref.update({ status: 'done', left: role, winner: role === 'host' ? 1 : 0 });
-    } catch (e) { /* se non riesco a chiuderla, scade da sola dalla lista */ }
+    if (!id || !NET.T) return;
+    try { await NET.T.leave(id, doc ? doc.status : 'waiting', abandon, role); }
+    catch (e) { /* se non riesco a chiuderla, scade da sola dalla lista */ }
+  }
+
+  // Pagina ricaricata a metà partita (sul telefono succede): se la partita è ancora viva, ci rientro.
+  async function resumeSaved() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('gorillas.game') || 'null'); } catch (e) { /* niente */ }
+    if (!saved || !saved.id || G.state !== 'setup') return;
+    const d = await NET.T.get(saved.id);
+    if (!d || !d.role || d.status === 'done' || G.state !== 'setup') {
+      try { localStorage.removeItem('gorillas.game'); } catch (e) { /* niente */ }
+      return;
+    }
+    attachGame(saved.id, d.role);
+    if (d.status === 'waiting') { G.state = 'waiting'; show('waiting'); }
   }
 
   /* ---------- Form ---------- */
