@@ -1,0 +1,1272 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gorillas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<style>
+:root{
+  --paper:#000000; --ink:#aaaaaa; --dim:#6e6e6e; --white:#ffffff;
+  --hi:#ffff55; --sky:#0000aa; --box:#555555; --red:#ff5555; --green:#55ff55;
+  color-scheme: dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'VT323','Courier New',monospace;font-size:22px;line-height:1.25}
+.wrap{max-width:720px;margin:0 auto;padding-block:16px 40px;padding-inline:16px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;justify-content:space-between;align-items:center;gap:6px 20px;flex-wrap:wrap}
+h1{margin:0;font-size:36px;font-weight:400;color:var(--hi);letter-spacing:.06em}
+header p{margin:0;flex:1 1 100%;order:3}
+.small{font-size:18px;padding:2px 12px;box-shadow:3px 3px 0 var(--box)}
+.small[aria-pressed="false"]{background:var(--box);color:var(--ink)}
+.screen{width:100%;max-width:100%;aspect-ratio:640/350;background:var(--sky);border:2px solid var(--box)}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+.panel{border:4px double var(--ink);padding:12px 16px 16px;display:flex;flex-direction:column;gap:12px}
+.panel h2{margin:0;font-size:22px;font-weight:400;color:var(--white);text-transform:uppercase;letter-spacing:.1em}
+.panel h2 b{font-weight:400;color:var(--hi)}
+.row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end}
+label{display:flex;flex-direction:column;gap:2px;flex:1 1 130px;min-width:0}
+label span{text-transform:uppercase;font-size:16px;letter-spacing:.1em}
+input,select{font:inherit;font-size:24px;background:#000;color:var(--white);border:2px solid var(--ink);padding:2px 8px;width:100%;box-sizing:border-box;border-radius:0}
+select{height:40px;cursor:pointer}
+input:focus,select:focus{outline:2px solid var(--hi);outline-offset:2px;border-color:var(--hi)}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+legend{text-transform:uppercase;font-size:16px;letter-spacing:.1em;padding:0;margin-bottom:4px}
+.modes{display:flex;flex-wrap:wrap;gap:6px 20px}
+.modes label{flex-direction:row;align-items:center;gap:8px;flex:0 1 auto;cursor:pointer;color:var(--white)}
+.modes label span{text-transform:none;font-size:22px;letter-spacing:0}
+.modes input{width:18px;height:18px;margin:0;accent-color:var(--hi)}
+.modes label.off{color:var(--dim);cursor:not-allowed}
+button{font:inherit;font-size:24px;background:var(--ink);color:#000;border:0;padding:4px 22px;box-shadow:4px 4px 0 var(--box);cursor:pointer;text-transform:uppercase;letter-spacing:.08em;flex:0 0 auto}
+button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--box)}
+button:focus-visible{outline:2px solid var(--hi);outline-offset:3px}
+button:disabled{background:var(--box);color:var(--dim);cursor:not-allowed;box-shadow:none}
+button.ghost{background:transparent;color:var(--ink);box-shadow:none;border:2px solid var(--ink);padding:2px 14px;font-size:20px}
+.hint{font-size:18px;color:var(--dim);margin:0}
+.err{color:var(--red);margin:0;min-height:1.25em}
+.ok{color:var(--green)}
+ul.games{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.games li{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;justify-content:space-between;border:2px solid var(--box);padding:6px 10px}
+ul.games li .who{color:var(--white)}
+ul.games li .meta{font-size:18px;color:var(--dim)}
+.blink{animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{visibility:hidden}}
+footer{font-size:18px;color:var(--dim)}
+footer p{margin:0}
+@media (max-width:480px){ body{font-size:20px} h1{font-size:30px} }
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <header>
+    <h1>GORILLAS</h1>
+    <p>Rifatto da GORILLA.BAS, PLAY compreso. Contro il computer, in due, o online.</p>
+    <button type="button" id="mute" class="small" aria-pressed="true">Audio: on</button>
+  </header>
+
+  <div class="screen"><canvas id="c" width="640" height="350" aria-label="Campo di gioco"></canvas></div>
+
+  <form id="setup" class="panel" autocomplete="off">
+    <h2>Nuova partita</h2>
+    <fieldset>
+      <legend>Modalità</legend>
+      <div class="modes">
+        <label><input type="radio" name="mode" value="cpu" checked><span>Contro il computer</span></label>
+        <label><input type="radio" name="mode" value="local"><span>In due su questo schermo</span></label>
+        <label id="onlinelabel"><input type="radio" name="mode" value="online"><span>Online contro un altro giocatore</span></label>
+      </div>
+      <p class="hint" id="onlinehint"></p>
+    </fieldset>
+    <div class="row">
+      <label><span id="name1label">Il tuo nome</span><input id="name1" maxlength="12" value="Danilo"></label>
+      <label id="name2wrap" hidden><span>Giocatore 2</span><input id="name2" maxlength="12" value="Sfidante"></label>
+    </div>
+    <div class="row">
+      <label><span>Punti per vincere</span><input id="ptw" type="number" inputmode="numeric" min="1" max="9" value="3"></label>
+      <label><span>Gravità (m/s²)</span><input id="gravity" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" value="9.8"></label>
+      <label><span>Difficoltà</span>
+        <select id="diff">
+          <option value="facile">Facile</option>
+          <option value="normale" selected>Normale</option>
+          <option value="difficile">Difficile</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <p class="hint" id="diffhint" style="flex:1 1 200px"></p>
+      <button type="submit" id="play">Gioca</button>
+    </div>
+    <p class="err" id="setuperr"></p>
+    <p class="hint" id="modehint">Terra 9.8, Luna 1.6, Giove 24.8. Il gorilla sulla sinistra è il giocatore 1. La musichetta parte al primo Gioca: i browser non suonano nulla finché non tocchi qualcosa.</p>
+  </form>
+
+  <section id="lobby" class="panel" hidden>
+    <h2>Partite in attesa</h2>
+    <ul class="games" id="games"></ul>
+    <p class="hint" id="lobbyhint">Nessuna partita in attesa. Aprine una tu: scegli Online e premi Gioca.</p>
+  </section>
+
+  <div id="waiting" class="panel" hidden>
+    <h2>Partita aperta <b class="blink">…</b></h2>
+    <div class="row">
+      <p class="hint" style="flex:1 1 200px" id="waitingtext">Aspetti uno sfidante. Appena qualcuno entra, si parte: tiri tu per primo.</p>
+      <button type="button" class="ghost" id="cancelwait">Annulla</button>
+    </div>
+  </div>
+
+  <form id="turn" class="panel" autocomplete="off" hidden>
+    <h2>Tira <b id="who"></b></h2>
+    <div class="row">
+      <label><span>Angolo (0-90)</span><input id="angle" type="number" inputmode="numeric" min="0" max="90" value="45"></label>
+      <label><span>Velocità (1-200)</span><input id="vel" type="number" inputmode="numeric" min="1" max="200" value="60"></label>
+      <button type="submit" id="throw">Lancia</button>
+    </div>
+    <p class="err" id="err"></p>
+    <div class="row">
+      <p class="hint" style="flex:1 1 200px">Invio passa da angolo a velocità e poi lancia. L'angolo è misurato dal lato del gorilla che tira. La freccia in basso è il vento.</p>
+      <button type="button" class="ghost" id="quit">Esci</button>
+    </div>
+  </form>
+
+  <div id="wait" class="panel" hidden>
+    <h2>Tira <b id="whowait"></b></h2>
+    <div class="row">
+      <p class="hint" style="flex:1 1 200px" id="waittext">Aspetta il tiro dell'avversario.</p>
+      <button type="button" class="ghost" id="quit2">Esci</button>
+    </div>
+  </div>
+
+  <div id="over" class="panel" hidden>
+    <h2 id="overtitle">Fine partita</h2>
+    <div class="row">
+      <p class="hint" id="overtext" style="flex:1 1 200px"></p>
+      <button type="button" id="again">Rigioca</button>
+    </div>
+  </div>
+
+  <footer>
+    <p>Traiettoria, vento e gravità seguono le stesse formule del .BAS del 1991: x = x0 + vx·t + ½·(vento/5)·t², y = y0 − vy·t + ½·g·t². Il sole si stupisce ancora.</p>
+    <p>Le tre stringhe PLAY originali (intro, esplosione, danza) passano da un piccolo interprete PLAY in Web Audio, onda quadra come lo speaker del PC. Trasposte due ottave in su: l'ottava 0 di QBasic sulle casse di un telefono non esiste.</p>
+    <p>Online: la partita è un seme e una lista di tiri. Ogni browser ricostruisce la stessa città e lo stesso esito, senza fidarsi dell'altro. Su un hosting qualsiasi bastano api.php e un database MySQL.</p>
+  </footer>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  const W = 640, H = 350, GROUND = 335;
+  const SUN = { x: 320, y: 25, r: 12 };
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const terr = document.createElement('canvas');
+  terr.width = W; terr.height = H;
+  const tctx = terr.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const now = () => performance.now();
+
+  /* ---------- Caso deterministico ----------
+     Tutta la città (altezze, colori, finestre) e il vento vengono da un generatore
+     con seme. Due browser con lo stesso seme vedono la stessa città: è quello che
+     rende possibile la partita online senza un server che arbitra. */
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  let rng = mulberry32(1);
+  const rnd = n => Math.floor(rng() * n);
+  const freshSeed = () => (Math.random() * 4294967296) >>> 0;
+  const roundSeed = (seed, round) => (seed + Math.imul(round + 1, 0x9E3779B9)) >>> 0;
+
+  const C = {
+    sky: '#0000aa', sun: '#ffff55', black: '#000000', white: '#ffffff',
+    grey: '#aaaaaa', dim: '#8c8c8c', red: '#ff5555', ape: '#aa5500',
+    winLit: '#ffff55', winDark: '#555555',
+    buildings: ['#aaaaaa', '#00aaaa', '#aa0000']
+  };
+
+  // Stato della partita in corso. mode: 'cpu' | 'local' | 'online'.
+  const G = {
+    state: 'setup', mode: 'cpu',
+    names: ['Giocatore 1', 'Giocatore 2'],
+    scores: [0, 0], ptw: 3, gravity: 9.8, wind: 0, difficulty: 'normale',
+    seed: 1, round: 0, me: 0, shots: [],
+    buildings: [], gor: [null, null], turn: 0,
+    sunShock: false, banana: null, explosion: null, dance: null,
+    arms: [0, 0], armUntil: [0, 0], last: [null, null],
+    cpuTries: 0
+  };
+
+  // Mappa dei pixel solidi: le collisioni si decidono qui, non sul canvas.
+  // Il canvas antialiasa i bordi e due browser potrebbero non essere d'accordo su un colpo di striscio.
+  const solid = new Uint8Array(W * H);
+  const isSolid = (x, y) => x >= 0 && x < W && y >= 0 && y < H && solid[(y | 0) * W + (x | 0)] === 1;
+
+  /* ---------- Città ---------- */
+  function makeSkyline() {
+    G.buildings = [];
+    const slope = rnd(6);
+    let x = 2, prevColor = -1;
+    while (x < W - 2) {
+      let w = 37 + rnd(38);
+      if (W - 2 - x - w < 37) w = W - 2 - x;
+      const f = (x + w / 2) / W;
+      let base;
+      switch (slope) {
+        case 0: base = 20 + f * 140; break;
+        case 1: base = 160 - f * 140; break;
+        case 2: base = 20 + Math.abs(f - 0.5) * 280; break;
+        case 3: base = 160 - Math.abs(f - 0.5) * 280; break;
+        default: base = 20 + rnd(140);
+      }
+      const h = Math.round(Math.min(230, Math.max(20, base + rnd(50) - 15)));
+      let ci = rnd(3);
+      if (ci === prevColor) ci = (ci + 1) % 3;
+      prevColor = ci;
+      G.buildings.push({ x, w, h, color: C.buildings[ci] });
+      x += w + 1;
+    }
+  }
+
+  function pickGorillaBuildings() {
+    const n = G.buildings.length;
+    return [Math.min(n - 1, 1 + rnd(2)), Math.max(0, n - 2 - rnd(2))];
+  }
+
+  const DIFF = {
+    facile: 'Gorilla sui tetti più alti, la città resta sotto la linea di tiro.',
+    normale: 'La città casuale del 1991: a volte libera, a volte no.',
+    difficile: 'Gorilla in fondo a un canyon tra i grattacieli. Si tira a campanile.'
+  };
+
+  // La difficoltà è la forma della città: quanto i gorilla stanno incassati tra i palazzi.
+  function shapeSkyline(i1, i2) {
+    const B = G.buildings;
+    const clamp = h => Math.min(230, Math.max(20, Math.round(h)));
+    if (G.difficulty === 'facile') {
+      for (const i of [i1, i2]) B[i].h = clamp(150 + rnd(60));
+      const cap = Math.min(B[i1].h, B[i2].h) - 50;
+      for (let i = 0; i < B.length; i++) {
+        if (i === i1 || i === i2) continue;
+        if (B[i].h > cap) B[i].h = clamp(cap - rnd(40));
+      }
+    } else if (G.difficulty === 'difficile') {
+      for (const i of [i1, i2]) B[i].h = clamp(25 + rnd(35));
+      for (const i of [i1 + 1, i2 - 1]) {           // le pareti del canyon, verso il centro
+        if (B[i] && i !== i1 && i !== i2) B[i].h = clamp(170 + rnd(60));
+      }
+      for (let i = i1 + 2; i <= i2 - 2; i++) {      // e qualche torre in mezzo, per gradire
+        if (rnd(2) === 0) B[i].h = clamp(B[i].h + 60 + rnd(60));
+      }
+    }
+  }
+
+  function paintSkyline() {
+    tctx.clearRect(0, 0, W, H);
+    solid.fill(0);
+    for (const b of G.buildings) {
+      const top = GROUND - b.h;
+      tctx.fillStyle = b.color;
+      tctx.fillRect(b.x, top, b.w, b.h);
+      for (let yy = top; yy < GROUND; yy++) solid.fill(1, yy * W + b.x, yy * W + b.x + b.w);
+      for (let wx = b.x + 3; wx + 3 <= b.x + b.w - 3; wx += 10) {
+        for (let wy = top + 3; wy + 6 <= GROUND - 3; wy += 15) {
+          tctx.fillStyle = rnd(4) === 0 ? C.winDark : C.winLit;
+          tctx.fillRect(wx, wy, 3, 6);
+        }
+      }
+    }
+  }
+
+  function cutCrater(x, y, R) {
+    const cx = Math.round(x), cy = Math.round(y), R2 = R * R;
+    for (let yy = Math.max(0, cy - R); yy <= Math.min(H - 1, cy + R); yy++) {
+      for (let xx = Math.max(0, cx - R); xx <= Math.min(W - 1, cx + R); xx++) {
+        if ((xx - cx) * (xx - cx) + (yy - cy) * (yy - cy) <= R2) solid[yy * W + xx] = 0;
+      }
+    }
+    tctx.save();
+    tctx.globalCompositeOperation = 'destination-out';
+    tctx.beginPath(); tctx.arc(cx, cy, R, 0, Math.PI * 2); tctx.fill();
+    tctx.restore();
+  }
+
+  function placeGorillas(i1, i2) {
+    const b1 = G.buildings[i1], b2 = G.buildings[i2];
+    G.gor[0] = { x: Math.round(b1.x + b1.w / 2), y: GROUND - b1.h - 28, alive: true };
+    G.gor[1] = { x: Math.round(b2.x + b2.w / 2), y: GROUND - b2.h - 28, alive: true };
+  }
+
+  function buildCity() {
+    makeSkyline();
+    const [i1, i2] = pickGorillaBuildings();
+    shapeSkyline(i1, i2);
+    paintSkyline();
+    placeGorillas(i1, i2);
+  }
+
+  function rollWind() {
+    let w = rnd(10) - 5;
+    if (rnd(3) === 0) w += (w > 0 ? rnd(10) : -rnd(10));
+    G.wind = w;
+  }
+
+  /* ---------- Disegno ---------- */
+  function drawSun() {
+    const { x, y, r } = SUN;
+    ctx.strokeStyle = C.sun; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4;
+      ctx.moveTo(x + Math.cos(a) * (r + 2), y + Math.sin(a) * (r + 2));
+      ctx.lineTo(x + Math.cos(a) * (r + 8), y + Math.sin(a) * (r + 8));
+    }
+    ctx.stroke();
+    ctx.fillStyle = C.sun;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.black;
+    ctx.beginPath(); ctx.arc(x - 4, y - 3, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 4, y - 3, 1.5, 0, Math.PI * 2); ctx.fill();
+    if (G.sunShock) {
+      ctx.beginPath(); ctx.arc(x, y + 5, 3, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.strokeStyle = C.black;
+      ctx.beginPath(); ctx.arc(x, y + 1, 6, Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
+    }
+  }
+
+  function drawGorilla(c, x, y, arms) {
+    c.fillStyle = C.ape;
+    c.fillRect(x - 4, y, 8, 7);        // testa
+    c.fillRect(x - 5, y + 2, 10, 3);
+    c.fillRect(x - 3, y + 7, 6, 1);    // collo
+    c.fillRect(x - 8, y + 8, 16, 7);   // torace
+    c.fillRect(x - 6, y + 15, 12, 6);  // pancia
+    c.fillRect(x - 7, y + 21, 5, 7);   // gambe
+    c.fillRect(x + 2, y + 21, 5, 7);
+    c.fillStyle = C.black;
+    c.fillRect(x - 3, y + 3, 2, 1);    // occhi
+    c.fillRect(x + 1, y + 3, 2, 1);
+    c.fillRect(x - 1, y + 10, 2, 4);   // petto
+    c.strokeStyle = C.ape; c.lineWidth = 4; c.lineCap = 'round';
+    const leftUp = arms === 1 || arms === 3;
+    const rightUp = arms === 2 || arms === 3;
+    c.beginPath();
+    c.moveTo(x - 7, y + 10);
+    if (leftUp) c.quadraticCurveTo(x - 16, y + 8, x - 14, y - 3);
+    else c.quadraticCurveTo(x - 16, y + 12, x - 14, y + 22);
+    c.moveTo(x + 7, y + 10);
+    if (rightUp) c.quadraticCurveTo(x + 16, y + 8, x + 14, y - 3);
+    else c.quadraticCurveTo(x + 16, y + 12, x + 14, y + 22);
+    c.stroke();
+  }
+
+  function drawBanana(x, y, frame) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(frame * Math.PI / 2);
+    ctx.fillStyle = C.sun;
+    ctx.beginPath();
+    ctx.arc(0, 0, 6, -0.25, Math.PI + 0.25, false);
+    ctx.arc(0, -3, 6, Math.PI - 0.25, 0.25, true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawExplosion() {
+    const e = G.explosion;
+    if (!e || e.r <= 0) return;
+    ctx.fillStyle = C.red;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.sun;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 0.55, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawHud() {
+    ctx.font = '20px VT323, "Courier New", monospace';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < 2; i++) {
+      const right = i === 1;
+      ctx.textAlign = right ? 'right' : 'left';
+      const px = right ? W - 6 : 6;
+      ctx.fillStyle = C.white;
+      ctx.fillText(G.names[i], px, 4);
+      let a = null, v = null, live = false;
+      if (G.state === 'aim' && G.turn === i && isMyTurn()) {
+        a = $('angle').value; v = $('vel').value; live = true;
+      } else if (G.last[i]) { a = G.last[i].a; v = G.last[i].v; }
+      if (a !== null) {
+        ctx.fillStyle = live ? C.sun : C.dim;
+        ctx.fillText('Angolo: ' + a, px, 24);
+        ctx.fillText('Velocità: ' + v, px, 44);
+      }
+    }
+    ctx.fillStyle = C.black;
+    ctx.fillRect(W / 2 - 28, 300, 56, 24);
+    ctx.fillStyle = C.white; ctx.textAlign = 'center';
+    ctx.fillText(G.scores[0] + '>' + G.scores[1], W / 2, 302);
+    if (G.wind !== 0) {
+      const x0 = W / 2, x1 = W / 2 + G.wind * 6, y = 344;
+      const d = Math.sign(G.wind);
+      ctx.strokeStyle = C.red; ctx.lineWidth = 2; ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(x0, y); ctx.lineTo(x1, y);
+      ctx.moveTo(x1, y); ctx.lineTo(x1 - d * 5, y - 4);
+      ctx.moveTo(x1, y); ctx.lineTo(x1 - d * 5, y + 4);
+      ctx.stroke();
+    }
+    if (G.state === 'setup' || G.state === 'waiting') {
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(28, 48, W - 56, 56);
+      ctx.fillStyle = C.white; ctx.textAlign = 'center';
+      ctx.font = '26px VT323, "Courier New", monospace';
+      ctx.fillText('Q B a s i c   G O R I L L A S', W / 2, 52);
+      ctx.font = '20px VT323, "Courier New", monospace';
+      ctx.fillText(G.state === 'waiting' ? 'Partita aperta. In attesa di uno sfidante.' : 'Due gorilla, due grattacieli, banane esplosive.', W / 2, 80);
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = C.sky;
+    ctx.fillRect(0, 0, W, H);
+    drawSun();
+    ctx.drawImage(terr, 0, 0);
+    const t = now();
+    for (let i = 0; i < 2; i++) {
+      const g = G.gor[i];
+      if (!g || !g.alive) continue;
+      let arms = G.arms[i];
+      if (t < G.armUntil[i]) arms = i === 0 ? 2 : 1;
+      drawGorilla(ctx, g.x, g.y, arms);
+    }
+    if (G.banana) drawBanana(G.banana.x, G.banana.y, Math.floor(G.banana.n / 3) % 4);
+    drawExplosion();
+    drawHud();
+  }
+
+  /* ---------- Suono: il PLAY di QBasic in Web Audio ---------- */
+  const TUNE = {
+    intro: 'MBT160O1L8CDEDCDL4ECC',
+    explode: 'MBO0L32EFGEFDC',
+    dance: 'MBO0L16EFGEFDC'
+  };
+  const OCTAVE_SHIFT = 2;
+  const SND = { ctx: null, muted: false, until: 0 };
+  try { SND.muted = localStorage.getItem('gorillas.muted') === '1'; } catch (e) { /* storage negato */ }
+
+  function audioCtx() {
+    if (!SND.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      SND.ctx = new AC();
+    }
+    if (SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {});
+    return SND.ctx;
+  }
+
+  const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  function parsePlay(str) {
+    const s = str.toUpperCase().replace(/\s+/g, '');
+    const out = [];
+    let i = 0, tempo = 120, oct = 4, len = 4, mode = 7 / 8;
+    const num = () => {
+      let n = '';
+      while (i < s.length && s[i] >= '0' && s[i] <= '9') n += s[i++];
+      return n === '' ? null : parseInt(n, 10);
+    };
+    const dots = () => { let d = 0; while (s[i] === '.') { d++; i++; } return d; };
+    const push = (semi, l, d) => {
+      const base = (4 / Math.max(1, l)) * 60 / tempo;
+      let total = base, add = base;
+      for (let k = 0; k < d; k++) { add /= 2; total += add; }
+      const rest = semi === null;
+      out.push({ f: rest ? 0 : 440 * Math.pow(2, (semi - 45) / 12), dur: rest ? 0 : total * mode, gap: total });
+    };
+    while (i < s.length) {
+      const c = s[i++];
+      if (c in SEMI) {
+        let semi = oct * 12 + SEMI[c];
+        if (s[i] === '#' || s[i] === '+') { semi++; i++; } else if (s[i] === '-') { semi--; i++; }
+        const l = num();
+        push(semi, l || len, dots());
+      } else if (c === 'N') {
+        const n = num() || 0;
+        push(n === 0 ? null : n - 1, len, dots());
+      } else if (c === 'P') {
+        const l = num();
+        push(null, l || len, dots());
+      } else if (c === 'O') { const n = num(); if (n !== null) oct = Math.min(6, Math.max(0, n)); }
+      else if (c === '>') oct = Math.min(6, oct + 1);
+      else if (c === '<') oct = Math.max(0, oct - 1);
+      else if (c === 'L') { const n = num(); if (n) len = n; }
+      else if (c === 'T') { const n = num(); if (n) tempo = n; }
+      else if (c === 'M') {
+        const m = s[i++];
+        if (m === 'N') mode = 7 / 8; else if (m === 'L') mode = 1; else if (m === 'S') mode = 3 / 4;
+      }
+    }
+    return out;
+  }
+
+  function play(str) {
+    if (SND.muted) return;
+    const ac = audioCtx();
+    if (!ac) return;
+    let t = Math.max(ac.currentTime + 0.03, SND.until || 0);
+    for (const n of parsePlay(str)) {
+      if (n.f > 0 && n.dur > 0) {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = 'square';
+        o.frequency.value = n.f * Math.pow(2, OCTAVE_SHIFT);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.setValueAtTime(0.06, t + Math.max(0.005, n.dur - 0.008));
+        g.gain.linearRampToValueAtTime(0.0001, t + n.dur);
+        o.connect(g); g.connect(ac.destination);
+        o.start(t); o.stop(t + n.dur + 0.01);
+      }
+      t += n.gap;
+    }
+    SND.until = t;
+  }
+
+  function setMuted(m) {
+    SND.muted = m;
+    const b = $('mute');
+    b.setAttribute('aria-pressed', m ? 'false' : 'true');
+    b.textContent = 'Audio: ' + (m ? 'off' : 'on');
+    try { localStorage.setItem('gorillas.muted', m ? '1' : '0'); } catch (e) { /* pazienza */ }
+  }
+
+  /* ---------- Fisica del tiro ----------
+     Una sola funzione di passo, usata dall'animazione, dal replay istantaneo e dal computer che mira.
+     Stesse formule del .BAS: x = x0 + vx·t + ½·(vento/5)·t², y = y0 − vy·t + ½·g·t². */
+  function makeShot(who, a, v) {
+    const g = G.gor[who];
+    const rad = a * Math.PI / 180;
+    const dir = who === 0 ? 1 : -1;
+    const sx = g.x + dir * 12, sy = g.y - 4;
+    return { who, sx, sy, vx: Math.cos(rad) * v * dir, vy: Math.sin(rad) * v, t: 0, n: 0, x: sx, y: sy };
+  }
+
+  // Avanza di un passo. Restituisce null se vola ancora, altrimenti l'esito.
+  function stepShot(b) {
+    b.t += 0.1; b.n++;
+    b.x = b.sx + b.vx * b.t + 0.5 * (G.wind / 5) * b.t * b.t;
+    b.y = b.sy - b.vy * b.t + 0.5 * G.gravity * b.t * b.t;
+    if (b.x < -12 || b.x > W + 12 || b.y > H + 12) return { kind: 'out' };
+    if (Math.hypot(b.x - SUN.x, b.y - SUN.y) < SUN.r + 4) b.sun = true;
+    for (let i = 0; i < 2; i++) {
+      const g = G.gor[i];
+      if (!g.alive) continue;
+      if (i === b.who && b.n < 10) continue;
+      if (Math.abs(b.x - g.x) < 16 && b.y > g.y - 4 && b.y < g.y + 30) return { kind: 'gorilla', hit: i, x: b.x, y: b.y };
+    }
+    if (isSolid(b.x, b.y)) return { kind: 'building', x: b.x, y: b.y };
+    return null;
+  }
+
+  /* ---------- Gioco ---------- */
+  const PANELS = ['setup', 'lobby', 'waiting', 'turn', 'wait', 'over'];
+  function show(...ids) {
+    for (const p of PANELS) $(p).hidden = !ids.includes(p);
+    if (ids.includes('setup') && NET.lobbyVisible) $('lobby').hidden = false;
+  }
+
+  function isMyTurn() {
+    if (G.mode === 'local') return true;
+    if (G.mode === 'cpu') return G.turn === 0;
+    return G.turn === G.me;
+  }
+
+  function startRound() {
+    rng = mulberry32(roundSeed(G.seed, G.round));
+    buildCity();
+    rollWind();
+    G.sunShock = false;
+    G.banana = null; G.explosion = null; G.dance = null;
+    G.arms = [0, 0]; G.last = [null, null];
+    G.cpuTries = 0;
+  }
+
+  function startMatch(opts) {
+    G.mode = opts.mode;
+    G.names = opts.names.slice();
+    G.ptw = opts.ptw; G.gravity = opts.gravity; G.difficulty = opts.difficulty;
+    G.seed = opts.seed; G.me = opts.me || 0;
+    G.scores = [0, 0]; G.round = 0; G.turn = 0; G.shots = [];
+    startRound();
+    play(TUNE.intro);
+    beginAim();
+  }
+
+  let cpuToken = 0;
+  function beginAim() {
+    G.state = 'aim';
+    G.banana = null;
+    $('err').textContent = '';
+    const l = G.last[G.turn];
+    if (isMyTurn()) {
+      $('who').textContent = G.names[G.turn];
+      show('turn');
+      if (l) { $('angle').value = l.a; $('vel').value = l.v; }
+      $('angle').focus();
+      $('angle').select();
+    } else {
+      $('whowait').textContent = G.names[G.turn];
+      $('waittext').textContent = G.mode === 'cpu' ? 'Il computer ci pensa su.' : 'Aspetta il tiro dell\'avversario.';
+      show('wait');
+      if (G.mode === 'cpu') scheduleCpu();
+    }
+    // Online: se nel frattempo sono arrivati tiri, li applico ora.
+    if (G.mode === 'online') drainShots();
+  }
+
+  // Un tiro entra in gioco solo da qui. animate=false serve al replay (ricarico pagina, tiri arretrati).
+  function fire(a, v, animate) {
+    G.shots.push([a, v]);
+    G.last[G.turn] = { a, v };
+    const b = makeShot(G.turn, a, v);
+    if (animate) {
+      G.banana = b;
+      G.armUntil[G.turn] = now() + 350;
+      G.state = 'flying';
+      show();
+      return;
+    }
+    let r = null;
+    while (!r) r = stepShot(b);
+    settle(r, false);
+  }
+
+  function settle(r, animate) {
+    G.banana = null;
+    if (r.kind === 'out') { endTurn(); return; }
+    const gorilla = r.kind === 'gorilla';
+    const x = gorilla ? G.gor[r.hit].x : r.x;
+    const y = gorilla ? G.gor[r.hit].y + 14 : r.y;
+    const R = gorilla ? 34 : 14;
+    const winner = gorilla ? 1 - r.hit : null;
+    if (gorilla) G.gor[r.hit].alive = false;
+    if (animate) {
+      G.state = 'explode';
+      G.explosion = { x, y, R, winner, r: 0, start: now(), cut: false };
+      play(TUNE.explode);
+    } else {
+      cutCrater(x, y, R);
+      afterExplosion(winner, false);
+    }
+  }
+
+  function endTurn() {
+    G.turn = 1 - G.turn;
+    G.sunShock = false;
+    beginAim();
+  }
+
+  function afterExplosion(winner, animate) {
+    G.explosion = null;
+    if (winner === null) { endTurn(); return; }
+    G.scores[winner]++;
+    if (animate) {
+      G.state = 'dance';
+      G.dance = { winner, start: now(), cycle: -1 };
+    } else afterDance(winner);
+  }
+
+  function afterDance(winner) {
+    G.dance = null;
+    G.arms = [0, 0];
+    if (G.scores[winner] >= G.ptw) gameOver(winner);
+    else {
+      G.round++;
+      G.turn = 1 - winner;   // ricomincia chi ha preso la banana
+      startRound();
+      beginAim();
+    }
+  }
+
+  function gameOver(winner, reason) {
+    G.state = 'over';
+    const l = 1 - winner;
+    $('overtitle').textContent = G.names[winner] + ' vince';
+    $('overtext').textContent = reason || (G.scores[winner] + ' a ' + G.scores[l] + '. ' +
+      G.names[l] + ' è stato colpito da una banana. Succede.');
+    show('over');
+    $('again').focus();
+    if (G.mode === 'online') NET.finish(winner);
+  }
+
+  function updateFlight() {
+    const r = stepShot(G.banana);
+    if (G.banana.sun) G.sunShock = true;
+    if (r) settle(r, true);
+  }
+
+  function updateExplosion() {
+    const e = G.explosion;
+    const el = now() - e.start;
+    const grow = 420, hold = 120, shrink = 320;
+    if (el < grow) e.r = e.R * el / grow;
+    else if (el < grow + hold) e.r = e.R;
+    else if (el < grow + hold + shrink) e.r = e.R * (1 - (el - grow - hold) / shrink);
+    else e.r = 0;
+    if (el >= grow && !e.cut) { e.cut = true; cutCrater(e.x, e.y, e.R); }
+    if (el >= grow + hold + shrink) afterExplosion(e.winner, true);
+  }
+
+  function updateDance() {
+    const d = G.dance;
+    const el = now() - d.start;
+    const cycle = Math.floor(el / 500);
+    if (cycle !== d.cycle && cycle < 4) { d.cycle = cycle; play(TUNE.dance); }
+    G.arms[d.winner] = el % 500 < 250 ? 3 : 0;
+    if (el > 2300) afterDance(d.winner);
+  }
+
+  let lastTs = 0, acc = 0;
+  const STEP = 1 / 90;
+  function loop(ts) {
+    const dt = Math.min(0.1, (ts - lastTs) / 1000 || 0);
+    lastTs = ts;
+    if (G.state === 'flying') {
+      acc += dt;
+      while (acc >= STEP && G.state === 'flying') { acc -= STEP; updateFlight(); }
+    } else acc = 0;
+    if (G.state === 'explode') updateExplosion();
+    if (G.state === 'dance') updateDance();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  /* ---------- Il computer ----------
+     Prova angoli e velocità con la fisica vera, tiene il tiro che colpisce o che passa più vicino,
+     poi ci mette dell'errore apposta. L'errore cala a ogni tiro del round: aggiusta come farebbe una persona. */
+  function cpuAim() {
+    const me = 1, target = G.gor[0];
+    let best = null;
+    for (let a = 15; a <= 85; a += 5) {
+      for (let v = 15; v <= 200; v += 5) {
+        const b = makeShot(me, a, v);
+        let r = null, dmin = Infinity;
+        while (!r) {
+          r = stepShot(b);
+          const d = Math.hypot(b.x - target.x, b.y - (target.y + 14));
+          if (d < dmin) dmin = d;
+        }
+        const score = r.kind === 'gorilla' && r.hit === 0 ? -1000 + v / 10 : dmin;
+        if (!best || score < best.score) best = { a, v, score };
+      }
+    }
+    const err = Math.max(3, 16 - 3 * G.cpuTries);   // 16, 13, 10, 7, 4, 3: al quinto tiro non perdona
+    const jitter = n => Math.floor(Math.random() * (2 * n + 1)) - n;
+    return {
+      a: Math.min(90, Math.max(0, best.a + jitter(Math.ceil(err / 2)))),
+      v: Math.min(200, Math.max(1, best.v + jitter(err)))
+    };
+  }
+
+  function scheduleCpu() {
+    const token = ++cpuToken;
+    setTimeout(() => {
+      if (token !== cpuToken || G.state !== 'aim' || G.mode !== 'cpu' || G.turn !== 1) return;
+      const s = cpuAim();
+      G.last[1] = s;   // lo mostra nell'HUD mentre "prende la mira"
+      G.cpuTries++;
+      setTimeout(() => {
+        if (token !== cpuToken || G.state !== 'aim') return;
+        fire(s.a, s.v, true);
+      }, 700);
+    }, 900);
+  }
+
+  /* ---------- Online ----------
+     La partita è un documento: chi la apre, chi entra, il seme, le impostazioni e la lista dei tiri.
+     Ogni browser rigioca i tiri sulla stessa città deterministica: nessuno deve fidarsi del risultato
+     calcolato dall'altro. Due trasporti con la stessa interfaccia:
+       - claude: lo store condiviso del runtime degli Artifact (pagina aperta da claude.ai);
+       - php:    api.php + MySQL su un hosting qualsiasi, interrogato ogni secondo e mezzo.
+     La pagina prova il primo, poi il secondo, altrimenti spegne l'online e dice perché. */
+  const API_URL = 'api.php';
+  const NET = {
+    T: null, myId: null, lobbyVisible: false, canPlay: false,
+    gameId: null, unsubGame: null, unsubLobby: null, role: null, doc: null,
+    pending: [],
+    finish(winner) {
+      if (!this.T || !this.gameId || this.role !== 'host' || !this.doc || this.doc.status === 'done') return;
+      this.T.finish(this.gameId, winner).catch(() => {});
+    }
+  };
+
+  function localId() {
+    let id = null;
+    try { id = localStorage.getItem('gorillas.id'); } catch (e) { /* niente */ }
+    if (!id) {
+      id = 'g_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8);
+      try { localStorage.setItem('gorillas.id', id); } catch (e) { /* niente */ }
+    }
+    return id;
+  }
+
+  // Un documento di partita normalizzato: { status, hostName, guestName, role, seed, ptw, gravity, difficulty, shots, winner, left, created }
+  const claudeTransport = {
+    db: null,
+    async init() {
+      if (!(window.claude && typeof window.claude.use === 'function')) return null;
+      const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      if (!db) return { ok: false, why: 'non disponibile per questa vista: serve essere collegati.' };
+      this.db = db;
+      NET.myId = (user ? await user.id() : null) || localId();
+      const can = user ? await user.can('data.write') : null;
+      if (can === false) return { ok: true, canPlay: false, why: 'puoi guardare le partite ma non giocare: chiedi a chi ha pubblicato la pagina di invitarti come Contributor.' };
+      return { ok: true, canPlay: true };
+    },
+    norm(d) {
+      return {
+        status: d.status, hostName: d.hostName, guestName: d.guestName,
+        role: d.host === NET.myId ? 'host' : d.guest === NET.myId ? 'guest' : null,
+        seed: d.seed, ptw: d.ptw, gravity: d.gravity, difficulty: d.difficulty,
+        shots: Array.isArray(d.shots) ? d.shots : [], winner: d.winner, left: d.left || null, created: d.created
+      };
+    },
+    watchLobby(cb, onErr) {
+      const q = this.db.collection('games').where('status', '==', 'waiting').orderBy('created', 'desc').limit(20);
+      return q.onSnapshot(snap => cb(snap.docs.map(s => Object.assign({ id: s.id }, this.norm(s.data() || {}), { mine: (s.data() || {}).host === NET.myId }))), onErr);
+    },
+    async create(doc) {
+      const ref = await this.db.collection('games').add(Object.assign({ host: NET.myId, guest: null, guestName: null, winner: null }, doc));
+      return ref.id;
+    },
+    async join(id, name) {
+      const ref = this.db.doc('games/' + id);
+      const lease = await ref.acquire({ holder: NET.myId, ttlMs: 5000 });
+      if (!lease.acquired) throw { code: 'busy' };
+      const snap = await ref.get();
+      const cur = snap.data();
+      if (!snap.exists || !cur || cur.status !== 'waiting' || cur.guest) throw { code: 'taken' };
+      if (cur.host === NET.myId) throw { code: 'own' };
+      await ref.update({ guest: NET.myId, guestName: name, status: 'playing', started: new Date().toISOString() });
+    },
+    watch(id, cb, onErr) {
+      return this.db.doc('games/' + id).onSnapshot(snap => cb(snap.exists ? this.norm(snap.data()) : null), onErr);
+    },
+    async get(id) {
+      const snap = await this.db.doc('games/' + id).get();
+      return snap.exists ? this.norm(snap.data()) : null;
+    },
+    async shot(id, shots) { await this.db.doc('games/' + id).update({ shots }); },
+    async leave(id, status, abandon, role) {
+      const ref = this.db.doc('games/' + id);
+      if (status === 'waiting') await ref.delete();
+      else if (status === 'playing' && abandon) await ref.update({ status: 'done', left: role, winner: role === 'host' ? 1 : 0 });
+    },
+    async finish(id, winner) { await this.db.doc('games/' + id).update({ status: 'done', winner }); }
+  };
+
+  const phpTransport = {
+    async api(action, body, query) {
+      const qs = new URLSearchParams(Object.assign({ a: action, me: NET.myId }, query || {}));
+      const res = await fetch(API_URL + '?' + qs, body
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ me: NET.myId }, body)), cache: 'no-store' }
+        : { cache: 'no-store' });
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* non è JSON */ }
+      if (!res.ok || !data || data.error) throw { code: (data && data.error) || ('http_' + res.status), message: data && data.message };
+      return data;
+    },
+    async init() {
+      NET.myId = localId();
+      if (location.protocol === 'file:') return null;
+      try {
+        const r = await this.api('ping');
+        return r && r.ok ? { ok: true, canPlay: true } : null;
+      } catch (e) {
+        if (e.code === 'no_config' || e.code === 'bad_config' || e.code === 'db_connect') return { ok: false, why: 'api.php c\'è ma il database no: ' + (e.message || e.code) };
+        return null;
+      }
+    },
+    poll(fn, everyMs) {
+      let stop = false, timer = null;
+      const tick = async () => {
+        if (stop) return;
+        try { await fn(); } catch (e) { /* il prossimo giro riprova */ }
+        if (!stop) timer = setTimeout(tick, document.visibilityState === 'hidden' ? everyMs * 3 : everyMs);
+      };
+      tick();
+      return () => { stop = true; clearTimeout(timer); };
+    },
+    watchLobby(cb, onErr) {
+      let lastJson = null, failures = 0;
+      return this.poll(async () => {
+        if (G.state !== 'setup') return;
+        try {
+          const r = await this.api('list');
+          failures = 0;
+          const j = JSON.stringify(r.games);
+          if (j !== lastJson) { lastJson = j; cb(r.games.map(g => Object.assign({}, g, { mine: g.role === 'host' }))); }
+        } catch (e) { if (++failures === 3) onErr(e); }
+      }, 3000);
+    },
+    async create(doc) {
+      return (await this.api('create', { name: doc.hostName, seed: doc.seed, ptw: doc.ptw, gravity: doc.gravity, difficulty: doc.difficulty })).game.id;
+    },
+    async join(id, name) { this.push(id, (await this.api('join', { id, name })).game); },
+    // Una risposta che contiene già la partita aggiornata: la consegno subito a chi ascolta, senza aspettare il giro di polling.
+    push(id, game) {
+      if (this.current && this.current.id === id && game && game.v > this.current.v) { this.current.v = game.v; this.current.cb(game); }
+    },
+    current: null,
+    watch(id, cb, onErr) {
+      const cur = { id, cb, v: 0 };
+      this.current = cur;
+      let failures = 0;
+      const stop = this.poll(async () => {
+        try {
+          const r = await this.api('get', null, { id, v: cur.v });
+          failures = 0;
+          if (r.unchanged || r.game.v <= cur.v) return;
+          cur.v = r.game.v;
+          cb(r.game);
+        } catch (e) {
+          if (e.code === 'gone') { cb(null); return; }
+          if (++failures === 8) onErr(e);
+        }
+      }, 1500);
+      return () => { stop(); if (this.current === cur) this.current = null; };
+    },
+    async get(id) {
+      try { return (await this.api('get', null, { id })).game; } catch (e) { return null; }
+    },
+    async shot(id, shots) {
+      const [a, v] = shots[shots.length - 1];
+      this.push(id, (await this.api('shot', { id, n: shots.length - 1, a, v })).game);
+    },
+    async leave(id) { await this.api('leave', { id }); },
+    async finish(id, winner) { await this.api('finish', { id, winner }); }
+  };
+
+  function setOnlineAvailable(ok, why) {
+    const lab = $('onlinelabel');
+    const radio = lab.querySelector('input');
+    radio.disabled = !ok;
+    lab.classList.toggle('off', !ok);
+    $('onlinehint').textContent = ok ? '' : 'Online: ' + why;
+    NET.canPlay = ok;
+    if (!ok && radio.checked) { $('setup').querySelector('input[value="cpu"]').checked = true; applyMode(); }
+  }
+
+  async function initOnline() {
+    let r = null;
+    for (const T of [claudeTransport, phpTransport]) {
+      r = await T.init();
+      if (r) { NET.T = T; break; }
+    }
+    if (!r) {
+      setOnlineAvailable(false, location.protocol === 'file:'
+        ? 'funziona dalla pagina pubblicata su claude.ai o da un server con api.php e un database.'
+        : 'sul server manca api.php (o il database). Vedi config.sample.php.');
+      return;
+    }
+    if (!r.ok) { setOnlineAvailable(false, r.why); return; }
+    NET.lobbyVisible = true;
+    if (G.state === 'setup') $('lobby').hidden = false;
+    setOnlineAvailable(r.canPlay, r.why || '');
+    if (!r.canPlay) $('lobbyhint').textContent = 'Puoi vedere le partite in attesa ma non entrare: chiedi a chi ha pubblicato la pagina di invitarti come Contributor.';
+    subscribeLobby();
+    if (r.canPlay) resumeSaved();
+  }
+
+  function subscribeLobby() {
+    if (NET.unsubLobby) return;
+    NET.unsubLobby = NET.T.watchLobby(renderLobby, err => {
+      $('lobbyhint').textContent = 'La lista delle partite non risponde (' + (err && err.code || 'errore') + ').';
+    });
+  }
+
+  function ago(iso) {
+    const ms = Date.now() - Date.parse(iso || '');
+    if (isNaN(ms)) return '';
+    const m = Math.max(0, Math.round(ms / 60000));
+    return m === 0 ? 'adesso' : m === 1 ? '1 minuto fa' : m + ' minuti fa';
+  }
+
+  function renderLobby(games) {
+    const ul = $('games');
+    ul.textContent = '';
+    const cutoff = Date.now() - 2 * 3600 * 1000;   // partite aperte e dimenticate: non le mostro
+    let n = 0;
+    for (const g of games) {
+      if (!g || Date.parse(g.created || 0) < cutoff) continue;
+      n++;
+      const li = document.createElement('li');
+      const left = document.createElement('div');
+      const who = document.createElement('div'); who.className = 'who';
+      who.textContent = (g.hostName || 'Qualcuno') + (g.mine ? ' (tu)' : '');
+      const meta = document.createElement('div'); meta.className = 'meta';
+      meta.textContent = [
+        'Difficoltà ' + (g.difficulty || 'normale'),
+        'gravità ' + (g.gravity || 9.8),
+        (g.ptw || 3) + (g.ptw === 1 ? ' punto' : ' punti'),
+        ago(g.created)
+      ].join(' · ');
+      left.append(who, meta);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      if (g.mine) {
+        btn.textContent = 'Riprendi';
+        btn.addEventListener('click', () => { attachGame(g.id, 'host'); G.state = 'waiting'; show('waiting'); });
+      } else {
+        btn.textContent = 'Entra';
+        btn.disabled = !NET.canPlay;
+        btn.addEventListener('click', () => joinGame(g.id));
+      }
+      li.append(left, btn);
+      ul.appendChild(li);
+    }
+    if (NET.canPlay) {
+      $('lobbyhint').textContent = n ? 'Entra in una partita, oppure aprine una tua: scegli Online e premi Gioca.'
+        : 'Nessuna partita in attesa. Aprine una tu: scegli Online e premi Gioca.';
+    }
+  }
+
+  function myName() { return $('name1').value.trim() || 'Giocatore'; }
+
+  async function hostGame() {
+    const doc = {
+      status: 'waiting', created: new Date().toISOString(), hostName: myName(),
+      seed: freshSeed(), ptw: G.ptw, gravity: G.gravity, difficulty: G.difficulty, shots: []
+    };
+    $('play').disabled = true;
+    try {
+      const id = await NET.T.create(doc);
+      attachGame(id, 'host');
+      G.state = 'waiting';
+      show('waiting');
+    } catch (e) {
+      $('setuperr').textContent = 'Non riesco ad aprire la partita (' + (e && e.code || 'errore') + ').';
+    } finally { $('play').disabled = false; }
+  }
+
+  const JOIN_ERR = {
+    busy: 'Qualcun altro sta entrando proprio ora. Riprova tra un attimo.',
+    taken: 'Troppo tardi: quella partita non è più libera.',
+    gone: 'Quella partita non c\'è più.',
+    own: 'È la tua partita: aspetta che entri qualcun altro.'
+  };
+  async function joinGame(id) {
+    $('setuperr').textContent = '';
+    try {
+      await NET.T.join(id, myName());
+      attachGame(id, 'guest');
+    } catch (e) {
+      $('setuperr').textContent = JOIN_ERR[e && e.code] || ('Non riesco a entrare (' + (e && e.code || 'errore') + ').');
+    }
+  }
+
+  function attachGame(id, role) {
+    detachGame();
+    NET.gameId = id; NET.role = role; NET.doc = null; NET.pending = [];
+    try { localStorage.setItem('gorillas.game', JSON.stringify({ id, role })); } catch (e) { /* niente */ }
+    NET.unsubGame = NET.T.watch(id, onGameDoc, err => {
+      if (G.state !== 'setup') gameOver(G.me, 'La connessione alla partita si è interrotta (' + (err && err.code || 'errore') + ').');
+    });
+  }
+
+  function detachGame() {
+    try { localStorage.removeItem('gorillas.game'); } catch (e) { /* niente */ }
+    if (NET.unsubGame) NET.unsubGame();
+    NET.unsubGame = null; NET.gameId = null; NET.role = null; NET.doc = null; NET.pending = [];
+  }
+
+  function onGameDoc(d) {
+    if (!d) {
+      if (NET.role === 'guest' && G.state !== 'setup' && G.state !== 'over') gameOver(G.me, 'Chi aveva aperto la partita l\'ha chiusa.');
+      if (NET.role === 'host' && G.state === 'waiting') backToSetup();
+      return;
+    }
+    const prev = NET.doc;
+    NET.doc = d;
+    if (d.status === 'waiting') return;
+    if (!prev || prev.status === 'waiting') {
+      // Si parte: stesse impostazioni e stesso seme da entrambe le parti. L'host è il gorilla a sinistra.
+      startMatch({
+        mode: 'online', names: [d.hostName || 'Host', d.guestName || 'Ospite'],
+        ptw: d.ptw, gravity: d.gravity, difficulty: d.difficulty, seed: d.seed,
+        me: NET.role === 'host' ? 0 : 1
+      });
+    }
+    NET.pending = d.shots.slice(G.shots.length);
+    drainShots();
+    if (d.status === 'done' && G.state !== 'over' && G.state !== 'setup' && d.left && d.left !== NET.role) {
+      gameOver(G.me, 'L\'avversario ha lasciato la partita. Vinci a tavolino.');
+    }
+  }
+
+  // Applica i tiri arrivati dallo store: tutti quelli arretrati di colpo, l'ultimo con l'animazione.
+  function drainShots() {
+    if (G.mode !== 'online') return;
+    while (NET.pending.length && G.state === 'aim') {
+      const [a, v] = NET.pending.shift();
+      const last = NET.pending.length === 0;
+      fire(a, v, last);
+    }
+  }
+
+  async function sendShot(a, v) {
+    try {
+      await NET.T.shot(NET.gameId, G.shots.concat([[a, v]]));
+    } catch (e) {
+      $('err').textContent = 'Il tiro non è partito (' + (e && e.code || 'errore') + '). Riprova.';
+      return false;
+    }
+    return true;
+  }
+
+  async function leaveOnline() {
+    const id = NET.gameId, role = NET.role, doc = NET.doc;
+    const abandon = G.state !== 'over' && G.state !== 'setup' && G.state !== 'waiting';
+    detachGame();
+    if (!id || !NET.T) return;
+    try { await NET.T.leave(id, doc ? doc.status : 'waiting', abandon, role); }
+    catch (e) { /* se non riesco a chiuderla, scade da sola dalla lista */ }
+  }
+
+  // Pagina ricaricata a metà partita (sul telefono succede): se la partita è ancora viva, ci rientro.
+  async function resumeSaved() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('gorillas.game') || 'null'); } catch (e) { /* niente */ }
+    if (!saved || !saved.id || G.state !== 'setup') return;
+    const d = await NET.T.get(saved.id);
+    if (!d || !d.role || d.status === 'done' || G.state !== 'setup') {
+      try { localStorage.removeItem('gorillas.game'); } catch (e) { /* niente */ }
+      return;
+    }
+    attachGame(saved.id, d.role);
+    if (d.status === 'waiting') { G.state = 'waiting'; show('waiting'); }
+  }
+
+  /* ---------- Form ---------- */
+  function currentMode() { return $('setup').querySelector('input[name="mode"]:checked').value; }
+
+  function applyMode() {
+    const m = currentMode();
+    $('name2wrap').hidden = m !== 'local';
+    $('name1label').textContent = m === 'local' ? 'Giocatore 1' : 'Il tuo nome';
+    $('play').textContent = m === 'online' ? 'Apri una partita' : 'Gioca';
+    $('modehint').textContent = m === 'cpu'
+      ? 'Il computer è il gorilla a destra. Mira con la fisica vera e sbaglia apposta, ma sempre meno: non dargli tempo.'
+      : m === 'local'
+      ? 'Terra 9.8, Luna 1.6, Giove 24.8. Il gorilla sulla sinistra è il giocatore 1. La musichetta parte al primo Gioca.'
+      : 'Apri una partita e aspetta che qualcuno entri dalla lista qui sotto. Tu sei il gorilla a sinistra e tiri per primo.';
+  }
+  for (const r of $('setup').querySelectorAll('input[name="mode"]')) r.addEventListener('change', applyMode);
+
+  function readSettings() {
+    G.ptw = Math.min(9, Math.max(1, parseInt($('ptw').value, 10) || 3));
+    G.gravity = Math.min(100, Math.max(0.1, parseFloat($('gravity').value) || 9.8));
+    G.difficulty = DIFF[$('diff').value] ? $('diff').value : 'normale';
+  }
+
+  $('setup').addEventListener('submit', ev => {
+    ev.preventDefault();
+    $('setuperr').textContent = '';
+    readSettings();
+    const m = currentMode();
+    audioCtx();   // sblocca l'audio sul gesto dell'utente
+    if (m === 'online') { hostGame(); return; }
+    startMatch({
+      mode: m, seed: freshSeed(), ptw: G.ptw, gravity: G.gravity, difficulty: G.difficulty, me: 0,
+      names: [myName(), m === 'cpu' ? 'Computer' : ($('name2').value.trim() || 'Giocatore 2')]
+    });
+  });
+
+  function setDifficulty(d) {
+    G.difficulty = DIFF[d] ? d : 'normale';
+    $('diff').value = G.difficulty;
+    $('diffhint').textContent = DIFF[G.difficulty];
+    if (G.state === 'setup') { rng = mulberry32(freshSeed()); buildCity(); }
+  }
+  $('diff').addEventListener('change', () => setDifficulty($('diff').value));
+
+  $('angle').addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('vel').focus(); $('vel').select(); }
+  });
+
+  $('turn').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    if (G.state !== 'aim' || !isMyTurn()) return;
+    const a = parseInt($('angle').value, 10);
+    const v = parseInt($('vel').value, 10);
+    if (isNaN(a) || a < 0 || a > 90) { $('err').textContent = 'Angolo tra 0 e 90.'; $('angle').focus(); return; }
+    if (isNaN(v) || v < 1 || v > 200) { $('err').textContent = 'Velocità tra 1 e 200.'; $('vel').focus(); return; }
+    $('err').textContent = '';
+    if (G.mode === 'online') {
+      $('throw').disabled = true;
+      const ok = await sendShot(a, v);   // il tiro torna dallo store e parte da lì, come per l'avversario
+      $('throw').disabled = false;
+      if (ok && G.state === 'aim') {
+        $('whowait').textContent = G.names[G.turn];
+        $('waittext').textContent = 'Tiro inviato…';
+        show('wait');
+      }
+      return;
+    }
+    fire(a, v, true);
+  });
+
+  function backToSetup() {
+    cpuToken++;
+    G.state = 'setup';
+    G.mode = 'cpu';
+    G.scores = [0, 0];
+    G.last = [null, null];
+    G.wind = 0;
+    G.banana = null; G.explosion = null; G.dance = null;
+    rng = mulberry32(freshSeed());
+    buildCity();
+    show('setup');
+    $('name1').focus();
+  }
+
+  $('again').addEventListener('click', () => { if (G.mode === 'online') leaveOnline(); backToSetup(); });
+  $('cancelwait').addEventListener('click', () => { leaveOnline(); backToSetup(); });
+  for (const id of ['quit', 'quit2']) {
+    $(id).addEventListener('click', () => {
+      if (G.mode === 'online') leaveOnline();
+      backToSetup();
+    });
+  }
+
+  $('mute').addEventListener('click', () => {
+    setMuted(!SND.muted);
+    if (!SND.muted) play('T160O3L16CE');
+  });
+
+  // Sonda di sola lettura per i test automatici: stato e impronta del terreno.
+  window.__gorillas = () => {
+    let h = 2166136261;
+    for (let i = 0; i < solid.length; i += 7) h = Math.imul(h ^ solid[i], 16777619);
+    return { state: G.state, mode: G.mode, scores: G.scores.slice(), turn: G.turn, round: G.round,
+      shots: G.shots.length, wind: G.wind, terrain: h >>> 0, me: G.me, alive: G.gor.map(g => g && g.alive) };
+  };
+
+  /* ---------- Avvio ---------- */
+  setDifficulty($('diff').value);
+  applyMode();
+  setMuted(SND.muted);
+  setOnlineAvailable(false, 'Controllo se l\'online è disponibile…');
+  if (document.fonts && document.fonts.load) document.fonts.load('20px VT323').catch(() => {});
+  requestAnimationFrame(loop);
+  initOnline().catch(() => setOnlineAvailable(false, 'Online non disponibile.'));
+})();
+</script>
+</body>
+</html>
